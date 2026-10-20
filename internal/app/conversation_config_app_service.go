@@ -54,6 +54,8 @@ type ConversationConfigPatch struct {
 	Runtime       *config.RuntimeSelection      `json:"runtime,omitempty"`
 	Codex         *config.CodexRuntimeSettings  `json:"codex,omitempty"`
 	Claude        *config.ClaudeRuntimeSettings `json:"claude,omitempty"`
+	Grok          *config.GrokRuntimeSettings `json:"grok,omitempty"`
+	Antigravity   *config.AntigravityRuntimeSettings `json:"antigravity,omitempty"`
 }
 
 type ConversationGoalMutation struct {
@@ -188,6 +190,8 @@ func (patch *ConversationConfigPatch) UnmarshalJSON(data []byte) error {
 		Runtime:       parsed.Runtime,
 		Codex:         parsed.Codex,
 		Claude:        parsed.Claude,
+		Grok:          parsed.Grok,
+		Antigravity:   parsed.Antigravity,
 	}
 	return nil
 }
@@ -223,7 +227,7 @@ func (a *App) ConversationConfig(ctx context.Context, binding ConversationConfig
 }
 
 func (a *App) PatchConversationConfig(ctx context.Context, binding ConversationConfigBinding, patch ConversationConfigPatch, baseRevision uint64) (conversationconfig.Snapshot, error) {
-	if patch.CustomAgentID == nil && patch.ProfileID == nil && patch.ThinkingLevel == nil && patch.ApprovalMode == nil && patch.Runtime == nil && patch.Codex == nil && patch.Claude == nil {
+	if patch.CustomAgentID == nil && patch.ProfileID == nil && patch.ThinkingLevel == nil && patch.ApprovalMode == nil && patch.Runtime == nil && patch.Codex == nil && patch.Claude == nil && patch.Grok == nil && patch.Antigravity == nil {
 		return conversationconfig.Snapshot{}, errors.New("conversation config changes are empty")
 	}
 	if patch.ProfileID != nil || patch.ThinkingLevel != nil || patch.Runtime != nil {
@@ -238,6 +242,8 @@ func (a *App) PatchConversationConfig(ctx context.Context, binding ConversationC
 		Runtime:       patch.Runtime,
 		Codex:         patch.Codex,
 		Claude:        patch.Claude,
+		Grok:          patch.Grok,
+		Antigravity:   patch.Antigravity,
 	}
 	var snapshot conversationconfig.Snapshot
 	var err error
@@ -383,7 +389,7 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 	if err != nil {
 		return conversationconfig.Snapshot{}, err
 	}
-	if patch.Runtime != nil || patch.Codex != nil || patch.Claude != nil {
+	if patch.Runtime != nil || patch.Codex != nil || patch.Claude != nil || patch.Grok != nil || patch.Antigravity != nil {
 		runtime, options, err := a.interactiveSessionRuntime(binding)
 		if err != nil {
 			return conversationconfig.Snapshot{}, err
