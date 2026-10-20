@@ -356,4 +356,3 @@ func TestExternalGameResumesAcrossCLIEnginesWithoutRerolling(t *testing.T) {
 		t.Fatalf("resume changed dice or turn count: %+v err=%v", snapshot.CurrentTurn, err)
 	}
 }
-
