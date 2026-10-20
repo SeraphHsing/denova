@@ -304,3 +304,48 @@ func observePlanFixture(t *testing.T, state ProductState, items []agentevent.Tod
 	t.Helper()
 	return state.ObservePlan(t.Context(), external.PlanEvent(items))
 }
+
+
+func TestSuspendedGameEngineSwitchPreservesCanonicalCommand(t *testing.T) {
+	_, _, state, options, _ := controlFixture(t)
+	engines := NewEngines()
+	defer engines.Close()
+	control, err := engines.ExternalControl(options, state)
+	if err != nil { t.Fatal(err) }
+	started := make(chan struct{})
+	run, err := control.Start(t.Context(), ExternalCycleInput{Request: agentchat.ChatRequest{CommandID: "original", Message: "Continue"}},
+		func(ctx context.Context, input ExternalCycleInput, _ func(agentrun.Event), _ func(context.Context, *external.RuntimeSession) error) (ExternalCycle, error) {
+			return externalCycleFunc(func(ctx context.Context) agentrun.Outcome {
+				close(started)
+				<-ctx.Done()
+				return agentrun.Outcome{Status: agentrun.OutcomeSuspended, Error: ctx.Err()}
+			}), nil
+		}, nil)
+	if err != nil { t.Fatal(err) }
+	done := make(chan agentrun.Outcome, 1)
+	go func() { done <- run.Wait(t.Context()) }()
+	select {
+	case <-started:
+	case <-time.After(2*time.Second): t.Fatal("run did not start")
+	}
+	if err := control.ReleaseSuspendedGameForEngineSwitch(t.Context(), "original"); !errors.Is(err, ErrOperationActive) {
+		t.Fatalf("live provider was released: %v", err)
+	}
+	if _, err := control.Submit(t.Context(), Command{Kind: agentexecution.CommandSuspend, CommandID: "pause", OperationID: run.Receipt().OperationID}); err != nil { t.Fatal(err) }
+	select {
+	case outcome := <-done:
+		if outcome.Status != agentrun.OutcomeSuspended { t.Fatalf("suspend: %+v", outcome) }
+	case <-time.After(2*time.Second): t.Fatal("suspend did not settle")
+	}
+	if err := control.ReleaseSuspendedGameForEngineSwitch(t.Context(), "wrong"); !errors.Is(err, ErrOperationActive) {
+		t.Fatalf("wrong command released: %v", err)
+	}
+	if err := control.ReleaseSuspendedGameForEngineSwitch(t.Context(), "original"); err != nil { t.Fatal(err) }
+	view, err := control.Status(t.Context())
+	if err != nil || view.Phase != agentrun.RunPhaseIdle { t.Fatalf("release status: %+v err=%v",view,err) }
+	newRun, err := control.Start(t.Context(), ExternalCycleInput{Request: agentchat.ChatRequest{CommandID:"new-provider",ResumeInterruptionID:"existing-interruption"}}, func(ctx context.Context, input ExternalCycleInput, _ func(agentrun.Event), _ func(context.Context, *external.RuntimeSession) error) (ExternalCycle, error) {
+		return externalCycleFunc(func(context.Context) agentrun.Outcome { return agentrun.Outcome{Status:agentrun.OutcomeCompleted} }), nil
+	}, nil)
+	if err != nil { t.Fatal(err) }
+	if outcome := newRun.Wait(t.Context()); outcome.Status != agentrun.OutcomeCompleted { t.Fatalf("new provider: %+v",outcome) }
+}
