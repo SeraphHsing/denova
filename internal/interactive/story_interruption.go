@@ -148,7 +148,7 @@ func deterministicTurnInterruptionID(playerInputID string) string {
 	return "turn-interruption-" + hex.EncodeToString(sum[:16])
 }
 
- 
+
 // TurnAbandonedEvent settles one uncommitted input without altering the story head,
 // character state, narrative, or the preserved audit and draft records.
 type TurnAbandonedEvent struct {
