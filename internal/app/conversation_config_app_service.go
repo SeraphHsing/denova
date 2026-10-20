@@ -407,7 +407,7 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 		if pending != nil && next.Engine().Kind == config.RuntimeNative {
 			// Native cannot consume an external Game draft's deterministic tool
 			// identity. Do not silently replay dice or state side effects.
-			return conversationconfig.Snapshot{}, fmt.Errorf("finish or abandon the interrupted CLI turn before switching to Native")
+			return conversationconfig.Snapshot{}, fmt.Errorf("%w: finish or abandon the interrupted CLI turn before switching to Native", agentruntime.ErrOperationActive)
 		}
 		// Verify the destination before releasing the suspended source.
 		if next.Engine().Kind != config.RuntimeNative {
