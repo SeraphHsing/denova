@@ -26,6 +26,28 @@ vi.mock('@/features/settings/query', () => ({
 }))
 
 describe('ModelProfileSwitcher', () => {
+  for (const engine of ['grok', 'antigravity'] as const) {
+    it(`edits the ${engine} model without offering an unsupported reasoning setting`, async () => {
+      settingsMocks.fetchEngineModels.mockResolvedValue({ items: [
+        { id: 'external-model', display_name: 'External model', efforts: [] },
+        { id: 'second-model', display_name: 'Second model', efforts: [] },
+      ] })
+      const patch = vi.fn().mockResolvedValue(true)
+      const runtime = engine === 'grok' ? { kind: engine, grok: { model: 'external-model' } } : { kind: engine, antigravity: { model: 'external-model' } }
+      const controller: ConversationConfigController = {
+        snapshot: { agent_kind: 'general', profile_id: 'removed', thinking_level: 'medium', approval_mode: 'write', revision: 1, runtime },
+        initialized: true, loading: false, saving: false, error: null, patch, reload: vi.fn(),
+      }
+      render(<ModelProfileSwitcher agentKey="general" conversationConfig={controller} />)
+      await userEvent.click(screen.getByRole('button', { name: /切换模型/ }))
+      await userEvent.click(await screen.findByRole('menuitem', { name: 'Second model' }))
+      expect(patch).toHaveBeenLastCalledWith({ [engine]: { model: 'second-model' } })
+      await userEvent.click(screen.getByRole('button', { name: /切换模型/ }))
+      expect(screen.queryByRole('group', { name: '推理强度' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '默认' })).not.toBeInTheDocument()
+      expect(settingsMocks.fetchEngineModels).toHaveBeenCalledWith(engine)
+    })
+  }
   it('keeps configuration and retry accessible after the conversation fails to load', async () => {
     settingsMocks.fetchSettings.mockResolvedValue({ effective: { openai_model: 'test-model' } })
     const open = vi.fn()

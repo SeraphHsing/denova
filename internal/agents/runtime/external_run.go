@@ -140,7 +140,7 @@ func (run *ExternalRun) drain(ctx context.Context) agentrun.Outcome {
 		run.guidance = len(input.Guidance)
 		input.OperationID = state.OperationID
 		run.goal = agentgoal.GoalState{}
-		if supportsGoal(control.binding.AgentKind) {
+		if supportsGoal(control.binding.AgentKind) && control.store.supportsGoal() {
 			run.goal, _, err = control.store.Goal(ctx)
 		}
 		if err != nil {

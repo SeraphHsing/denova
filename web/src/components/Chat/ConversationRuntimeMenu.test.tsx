@@ -34,11 +34,31 @@ beforeEach(() => {
   // clicks here; the browser suite covers pointer travel, hover, and placement.
   user = userEvent.setup({ skipHover: true })
   mocks.fetchProjectSettings.mockResolvedValue({ effective: { openai_model: 'native-model' } })
-  mocks.fetchAgentEngines.mockResolvedValue({ items: ['native', 'codex', 'claude'].map(id => ({ id, status: 'ready' })) })
+  mocks.fetchAgentEngines.mockResolvedValue({ items: ['native', 'codex', 'claude', 'grok', 'antigravity'].map(id => ({ id, status: 'ready' })) })
   mocks.fetchEngineModels.mockResolvedValue({ default_id: 'saved-model', items: [{ id: 'saved-model', efforts: ['high'] }] })
 })
 
 describe('ConversationRuntimeMenu', () => {
+  for (const engine of ['grok', 'antigravity'] as const) {
+    for (const agent of ['ide', 'general', 'interactive_story'] as const) {
+      it(`switches the bound ${agent} conversation to ${engine} with its own model settings`, async () => {
+        mocks.fetchProjectSettings.mockResolvedValue({ effective: { openai_model: 'native-model', agent_runtimes: { [agent]: { [engine]: { model: 'saved-model', effort: 'high' } } } } })
+        const config = controller(agent)
+        render(menu(config))
+        await openRuntime()
+        await user.click(await screen.findByRole('menuitem', { name: engine === 'grok' ? 'Grok Build CLI' : 'Antigravity CLI' }))
+        await waitFor(() => expect(config.patch).toHaveBeenCalledWith({ runtime: { kind: engine, [engine]: { model: 'saved-model', effort: 'high' } } }))
+      })
+    }
+    it(`drops an unsupported ${engine} effort when resolving defaults`, async () => {
+      mocks.fetchProjectSettings.mockResolvedValue({ effective: { openai_model: 'native-model', agent_runtimes: { general: { [engine]: { model: 'saved-model', effort: 'unsupported' } } } } })
+      const config = controller()
+      render(menu(config))
+      await openRuntime()
+      await user.click(await screen.findByRole('menuitem', { name: engine === 'grok' ? 'Grok Build CLI' : 'Antigravity CLI' }))
+      await waitFor(() => expect(config.patch).toHaveBeenCalledWith({ runtime: { kind: engine, [engine]: { model: 'saved-model' } } }))
+    })
+  }
   for (const agent of ['ide', 'general', 'interactive_story'] as const) {
     it(`switches the bound ${agent} conversation and keeps the model menu open`, async () => {
       mocks.fetchProjectSettings.mockResolvedValue({ effective: { openai_model: 'native-model', agent_runtimes: { [agent]: { codex: { model: 'saved-model', effort: 'high' } } } } })

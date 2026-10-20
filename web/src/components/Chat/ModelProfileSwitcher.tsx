@@ -195,10 +195,10 @@ function useModelProfileSelector({ agentKey, conversationConfig, disabled = fals
   const currentThinkingLevel = engineSettings ? engineSettings.profile_id ? '' : engineSettings.effort || 'default' : normalizeThinkingLevel(conversationConfig?.snapshot?.thinking_level) ?? ''
   const engineModel = engineModels?.items.find((model) => model.id === engineSettings?.model)
   const thinkingLevels: readonly string[] = engineSettings
-    ? (engineModel ? ['default', ...engineModel.efforts] : [])
+    ? (engineModel?.efforts.length ? ['default', ...engineModel.efforts] : [])
     : THINKING_LEVELS
   const thinkingOptions = thinkingLevels.map((value) => ({ value, label: t(`chat.modelProfile.thinking.${value}`, { defaultValue: value }) }))
-  const currentThinkingLevelLabel = currentThinkingLevel
+  const currentThinkingLevelLabel = thinkingLevels.includes(currentThinkingLevel)
     ? t(`chat.modelProfile.thinking.${currentThinkingLevel}`, { defaultValue: currentThinkingLevel })
     : ''
   const currentSelectionLabel = [currentModelLabel, currentThinkingLevelLabel].filter(Boolean).join(' ')

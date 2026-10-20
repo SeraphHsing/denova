@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { checkAgentEngine, fetchAgentEngines, fetchEngineModels } from '@/features/agent-runtime/api'
-import { resolveRuntimePreferences, runtimeModelKey, runtimeModelFromKey, type AgentEngineID, type EngineDescriptor, type EngineModels, type RuntimePreferences } from '@/features/agent-runtime/types'
+import { AGENT_ENGINE_IDS, resolveRuntimePreferences, runtimeModelKey, runtimeModelFromKey, type AgentEngineID, type EngineDescriptor, type EngineModels, type RuntimePreferences } from '@/features/agent-runtime/types'
 import { useRuntimeProfiles } from '@/features/agent-runtime/api-profiles'
 import { Field } from './agent-form-controls'
 import { AgentConfigurationDisclosure } from './agent-configuration-disclosure'
@@ -34,6 +34,9 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
   const selectedProfile = profiles.find(item => item.id === runtimeModelKey(settings))
   const model = models.items.find((item) => item.id === settings?.model)
   const source = settings?.profile_id ? 'denova' : 'cli'
+  const apiProfilesSupported = selected === 'codex' || selected === 'claude'
+  const homeKey = { native: '', codex: 'agentRuntime.sharedCodexHome', claude: 'agentRuntime.sharedClaudeHome', grok: 'agentRuntime.sharedGrokHome', antigravity: 'agentRuntime.sharedAntigravityHome' }[selected]
+  const loginKey = { native: '', codex: 'agentRuntime.loginInTerminal', claude: 'agentRuntime.claudeLoginInTerminal', grok: 'agentRuntime.grokLoginInTerminal', antigravity: 'agentRuntime.antigravityLoginInTerminal' }[selected]
 
   useEffect(() => { if (engines.length) onCatalog(engines) }, [engines, onCatalog])
 
@@ -73,7 +76,7 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
         <Select value={selected} disabled={busy} onValueChange={(id) => void act(async () => { await beforeSwitch(); onChange({ ...value, selected: id as AgentEngineID }) })}>
           <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label={t('agentRuntime.engine')}><SelectValue /></SelectTrigger>
           <SelectContent><SelectGroup>
-            {(engines.length ? engines : [{ id: 'native', name_key: 'agentRuntime.native' }, { id: 'codex', name_key: 'agentRuntime.codex' }, { id: 'claude', name_key: 'agentRuntime.claude' }]).map((item) => <SelectItem key={item.id} value={item.id}>{t(item.name_key)}</SelectItem>)}
+            {(engines.length ? engines : AGENT_ENGINE_IDS.map(id => ({ id, name_key: `agentRuntime.${id}` }))).map((item) => <SelectItem key={item.id} value={item.id}>{t(item.name_key)}</SelectItem>)}
           </SelectGroup></SelectContent>
         </Select>
       </Field>
@@ -86,7 +89,7 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
       </Field>}
     </div>
     {selected !== 'native' && <>
-      <Field label={t('agentRuntime.modelSource')}>
+      {apiProfilesSupported && <Field label={t('agentRuntime.modelSource')}>
         <ToggleGroup type="single" variant="outline" size="sm" value={source} disabled={busy}
           aria-label={t('agentRuntime.modelSource')} className="max-w-full flex-wrap"
           onValueChange={(nextSource) => {
@@ -99,11 +102,11 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
           <ToggleGroupItem value="cli" disabled={source !== 'cli' && (!ready || !models.items.length)}>{t('agentRuntime.cliModels')}</ToggleGroupItem>
           <ToggleGroupItem value="denova" disabled={source !== 'denova' && !profiles.length}>{t('agentRuntime.apiModels')}</ToggleGroupItem>
         </ToggleGroup>
-      </Field>
-      {!profiles.length && <p className="text-xs text-muted-foreground">{t(selected === 'codex' ? 'agentRuntime.codexProfilesHint' : 'agentRuntime.claudeProfilesHint')}</p>}
-      <p className="text-xs leading-relaxed text-[var(--nova-text-muted)]">{t(settings?.profile_id ? 'agentRuntime.apiProfileHint' : selected === 'claude' ? 'agentRuntime.sharedClaudeHome' : 'agentRuntime.sharedCodexHome')}</p>
+      </Field>}
+      {apiProfilesSupported && !profiles.length && <p className="text-xs text-muted-foreground">{t(selected === 'codex' ? 'agentRuntime.codexProfilesHint' : 'agentRuntime.claudeProfilesHint')}</p>}
+      <p className="text-xs leading-relaxed text-[var(--nova-text-muted)]">{t(settings?.profile_id ? 'agentRuntime.apiProfileHint' : homeKey)}</p>
       {engine?.reason_key && <p className="text-xs leading-relaxed text-[var(--nova-text-muted)]">{t(engine.reason_key)}</p>}
-      {!settings?.profile_id && engine?.status === 'auth_required' && <p role="status" className="text-xs leading-relaxed text-[var(--nova-text-muted)]">{t(selected === 'claude' ? 'agentRuntime.claudeLoginInTerminal' : 'agentRuntime.loginInTerminal')}</p>}
+      {!settings?.profile_id && engine?.status === 'auth_required' && <p role="status" className="text-xs leading-relaxed text-[var(--nova-text-muted)]">{t(loginKey)}</p>}
       <div className="grid min-w-0 gap-3 md:grid-cols-2">
         <Field label={t('agentRuntime.model')} inherited={ownSettings == null}
           onReset={ownSettings ? () => { const next = { ...value }; delete next[selected]; onChange(next) } : undefined}>
@@ -129,7 +132,7 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
     </>}
     <div className="flex flex-col gap-1.5 text-[11px] leading-relaxed text-[var(--nova-text-faint)]">
       <p>{t('agentRuntime.defaultsOnly')}</p>
-      {selected !== 'native' && <p>{t('agentRuntime.policy.providedToolsWithoutApproval')}</p>}
+      {selected !== 'native' && <p>{t(selected === 'grok' || selected === 'antigravity' ? 'agentRuntime.policy.cliTools' : 'agentRuntime.policy.providedToolsWithoutApproval')}</p>}
     </div>
     {profilesFailed && <p role="alert" className="text-xs text-destructive">{t('agentRuntime.profilesFailed')}</p>}
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}

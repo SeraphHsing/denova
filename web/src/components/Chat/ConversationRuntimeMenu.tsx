@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from '@/components/ui/dropdown-menu'
 import { checkAgentEngine, fetchAgentEngines, fetchEngineModels } from '@/features/agent-runtime/api'
 import { runtimeProfileOptions } from '@/features/agent-runtime/api-profiles'
-import type { AgentEngineID } from '@/features/agent-runtime/types'
+import { AGENT_ENGINE_IDS, type AgentEngineID } from '@/features/agent-runtime/types'
 import type { ConversationConfigChanges, ConversationConfigController } from '@/features/conversation-config/types'
 import { fetchModelCatalog, fetchProjectSettings, fetchSettings } from '@/features/settings/api'
 import { selectableModelProfiles } from '@/features/settings/model-profiles'
@@ -29,7 +29,7 @@ async function loadChoices(controller: ConversationConfigController): Promise<Ru
     ? effective.custom_agents?.find(agent => agent.id === snapshot.custom_agent_id)?.runtime
     : agentKind === 'ide' || agentKind === 'general' || agentKind === 'interactive_story'
       ? effective.agent_runtimes?.[agentKind] : undefined
-  return Promise.all((['native', 'codex', 'claude'] as const).map(async (kind): Promise<RuntimeChoice> => {
+  return Promise.all(AGENT_ENGINE_IDS.map(async (kind): Promise<RuntimeChoice> => {
     try {
       if (kind === 'native') {
         const profiles = selectableModelProfiles(effective).filter(item => item.model?.trim())
@@ -51,7 +51,7 @@ async function loadChoices(controller: ConversationConfigController): Promise<Ru
       if (status !== 'ready' && !(model?.profile_id && status === 'auth_required')) {
         return { kind, reason: engine?.reason_key || `agentRuntime.status.${status}` }
       }
-      if (model?.profile_id) {
+      if ((kind === 'codex' || kind === 'claude') && model?.profile_id) {
         const profileID = model.profile_id
         const catalog = await fetchModelCatalog()
         if (runtimeProfileOptions(kind, settings, catalog).some(item => item.id === `profile:${profileID}`)) {
@@ -67,10 +67,12 @@ async function loadChoices(controller: ConversationConfigController): Promise<Ru
       const resolved = { model: found.id,
         ...(found.id === model?.model && model.effort && found.efforts.includes(model.effort) ? { effort: model.effort } : {}),
       }
-      return { kind, changes: { runtime: kind === 'codex'
-        ? { kind, codex: { ...resolved, ...(preferences?.codex?.sandbox ? { sandbox: preferences.codex.sandbox } : {}) } }
-        : { kind, claude: resolved },
-      } }
+      switch (kind) {
+        case 'codex': return { kind, changes: { runtime: { kind, codex: { ...resolved, ...(preferences?.codex?.sandbox ? { sandbox: preferences.codex.sandbox } : {}) } } } }
+        case 'claude': return { kind, changes: { runtime: { kind, claude: resolved } } }
+        case 'grok': return { kind, changes: { runtime: { kind, grok: resolved } } }
+        case 'antigravity': return { kind, changes: { runtime: { kind, antigravity: resolved } } }
+      }
     } catch (cause) {
       console.warn('[conversation-config] load runtime choice failed', { kind, cause })
       return { kind, reason: 'agentRuntime.connectionFailed' }
