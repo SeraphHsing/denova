@@ -374,4 +374,6 @@ func TestExternalRecoveryAbortWithoutProvider(t *testing.T) {
 	if outcome := recovered.Wait(t.Context()); outcome.Status != agentrun.OutcomeAborted { t.Fatalf("abort: %+v",outcome) }
 	status, err = cold.Status(t.Context())
 	if err != nil || status.Phase != agentrun.RunPhaseIdle { t.Fatalf("abort did not release controller: %+v err=%v",status,err) }
+	aborted, err := cold.AbortedCommand(t.Context(), "lost")
+	if err != nil || !aborted { t.Fatalf("durable abort not recoverable: %t err=%v",aborted,err) }
 }
