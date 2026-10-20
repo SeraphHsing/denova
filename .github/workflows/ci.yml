@@ -38,6 +38,7 @@ jobs:
       unit: ${{ steps.paths.outputs.unit }}
       updater: ${{ steps.paths.outputs.updater }}
       creative_eval: ${{ steps.paths.outputs.creative_eval }}
+      browser_full: ${{ steps.paths.outputs.browser_full }}
       browser_shards: ${{ steps.paths.outputs.browser_shards }}
       shard_count: ${{ steps.paths.outputs.shard_count }}
     steps:
@@ -193,12 +194,12 @@ jobs:
     timeout-minutes: 35
     strategy:
       # Keep all diagnostics in full CI; ordinary smoke cancels sibling shards.
-      fail-fast: ${{ needs.changes.outputs.full != 'true' }}
+      fail-fast: ${{ needs.changes.outputs.browser_full != 'true' }}
       matrix:
         shard: ${{ fromJSON(needs.changes.outputs.browser_shards) }}
     env:
       DENOVA_E2E_PACKAGE_DIR: ${{ github.workspace }}/output
-      DENOVA_CI_SUITE: ${{ needs.changes.outputs.full == 'true' && 'full' || 'smoke' }}
+      DENOVA_CI_SUITE: ${{ needs.changes.outputs.browser_full == 'true' && 'full' || 'smoke' }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-web
