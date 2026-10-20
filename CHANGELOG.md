@@ -12,6 +12,13 @@ Denova records major user-visible features, important compatibility or data chan
 
 ## [Unreleased]
 
+### Fixed / 修复
+
+- 修复游戏模式下 Grok Build 与 Antigravity CLI 的对话模型切换配置未保存的问题；支持已暂停的外部 CLI 回合安全切换至另一外部引擎，并保留未完成的剧情草稿和判定结果。
+- 修复游戏回合中止后待处理输入阻塞后续对话的问题：通过可审计的终结事件清理待处理状态，不修改已提交的人物状态、剧情历史或分支计划；恢复时放弃回合不再依赖旧 CLI 可用。
+- Fixed Game conversation model selection for Grok Build and Antigravity CLI, and allowed safely suspended external CLI turns to resume under another external engine without discarding drafts or accepted rule outcomes.
+- Fixed abandoned Game turns blocking later conversation by durably settling pending inputs without altering committed character state, story history, or branch plans; aborting cold recovery no longer requires the original CLI.
+
 ## [v0.6.4] - 2026-10-20
 
 ### Brief / 简要说明
