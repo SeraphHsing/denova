@@ -410,7 +410,7 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 		var suspendedController *agentruntime.ExternalController
 		var suspendedCommandID string
 		if pending != nil && next.Engine().Kind == config.RuntimeNative {
-			return conversationconfig.Snapshot{}, conversationconfig.ErrRuntimeCapabilityUnsupported
+			return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive
 		}
 		if pending != nil {
 			// Only an entirely settled suspended external task can be handed to a
