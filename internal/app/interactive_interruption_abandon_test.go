@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"denova/config"
-	"denova/internal/agents/conversationconfig"
 	"denova/internal/interactive"
 )
 
@@ -60,5 +59,4 @@ func TestDetachedGameDraftCanBeAbandonedOnlyByMatchingInterruption(t *testing.T)
 	if after.TurnCount != before.TurnCount || !reflect.DeepEqual(after.State, before.State) || len(after.PendingPlayerInputs) != 0 {
 		t.Fatalf("abandonment affected committed Game state: %+v", after)
 	}
-	_ = conversationconfig.ErrRevisionConflict
 }
