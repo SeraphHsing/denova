@@ -92,12 +92,20 @@ func (c *Client) Check(ctx context.Context) (state external.ConnectionState, err
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if c.closed {
+			state = external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.connectionLost"}
+			err = errors.New("Grok connection is closed")
+			c.state = state
 			return
 		}
-		// A transient ACP discovery failure must not discard a runtime that was
-		// usable a moment ago. The explicit check still reports the error.
-		if state.Status == "unavailable" && c.state.Status == "ready" {
+		// Only interrupted probes retain the last confirmed readiness. Invalid
+		// configuration and protocol failures must replace it.
+		if state.Status == "unavailable" && c.state.Status == "ready" &&
+			(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
+			state = c.state
 			return
+		}
+		if errors.Is(err, ErrVersionUnsupported) {
+			state = external.ConnectionState{Status: "incompatible", ReasonKey: "agentRuntime.grokIncompatibleVersion"}
 		}
 		c.state = state
 	}()

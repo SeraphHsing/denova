@@ -1,13 +1,14 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DropdownMenu, DropdownMenuContent } from '@/components/ui/dropdown-menu'
 import type { ConversationConfigController } from '@/features/conversation-config/types'
 import { ConversationRuntimeMenu } from './ConversationRuntimeMenu'
 
-const mocks = vi.hoisted(() => ({ fetchProjectSettings: vi.fn(), fetchSettings: vi.fn(), fetchModelCatalog: vi.fn(), fetchAgentEngines: vi.fn(), fetchEngineModels: vi.fn(), checkAgentEngine: vi.fn() }))
+const mocks = vi.hoisted(() => ({ fetchProjectSettings: vi.fn(), fetchSettings: vi.fn(), fetchModelCatalog: vi.fn(), fetchAgentEngines: vi.fn(), fetchEngineModels: vi.fn(), checkAgentEngine: vi.fn(), subscribeSettingsTarget: vi.fn() }))
 vi.mock('@/features/settings/api', () => mocks)
-vi.mock('@/features/agent-runtime/api', () => mocks)
+vi.mock('@/features/agent-runtime/api', () => ({ ...mocks, AGENT_ENGINE_CHECKED_EVENT: 'denova:agent-engine-checked' }))
+vi.mock('@/features/settings/query', async importOriginal => ({ ...await importOriginal<typeof import('@/features/settings/query')>(), subscribeSettingsTarget: mocks.subscribeSettingsTarget }))
 
 let user: ReturnType<typeof userEvent.setup>
 
@@ -30,6 +31,7 @@ async function openRuntime() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.subscribeSettingsTarget.mockReturnValue(() => {})
   // jsdom has no submenu geometry for Radix's pointer-grace handling. Exercise
   // clicks here; the browser suite covers pointer travel, hover, and placement.
   user = userEvent.setup({ skipHover: true })
@@ -159,4 +161,39 @@ describe('ConversationRuntimeMenu', () => {
       expect(config.snapshot?.runtime).toBeUndefined()
     })
   }
+  it('reuses choices when reopening without new probes', async () => {
+    render(menu(controller()))
+    await openRuntime()
+    const reads = mocks.fetchEngineModels.mock.calls.length
+    await user.keyboard('{ArrowLeft}')
+    await openRuntime()
+    expect(mocks.fetchEngineModels).toHaveBeenCalledTimes(reads)
+  })
+
+  it('observes an automatic check completed after closing the submenu', async () => {
+    let complete!: (value: unknown) => void
+    mocks.checkAgentEngine.mockReturnValue(new Promise(resolve => { complete = resolve }))
+    mocks.fetchAgentEngines.mockResolvedValueOnce({ items: [{ id: 'codex', status: 'unchecked' }] })
+    render(menu(controller()))
+    await openRuntime()
+    await waitFor(() => expect(mocks.checkAgentEngine).toHaveBeenCalled())
+    await user.keyboard('{ArrowLeft}')
+    await act(async () => { complete({ id: 'codex', status: 'ready' }) })
+    await openRuntime()
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Codex' })).not.toHaveAttribute('aria-disabled', 'true'))
+    expect(mocks.checkAgentEngine.mock.calls.filter(([id]) => id === 'codex')).toHaveLength(1)
+  })
+
+  it('refreshes choices after settings or an external engine check changes', async () => {
+    render(menu(controller()))
+    await openRuntime()
+    const reads = mocks.fetchAgentEngines.mock.calls.length
+    const notify = mocks.subscribeSettingsTarget.mock.calls[0][1]
+    act(() => notify({ effective: { openai_model: 'changed-model' } }))
+    await waitFor(() => expect(mocks.fetchAgentEngines.mock.calls.length).toBeGreaterThan(reads))
+    const refreshed = mocks.fetchAgentEngines.mock.calls.length
+    act(() => window.dispatchEvent(new Event('denova:agent-engine-checked')))
+    await waitFor(() => expect(mocks.fetchAgentEngines.mock.calls.length).toBeGreaterThan(refreshed))
+  })
+
 })

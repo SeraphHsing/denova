@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from '@/components/ui/dropdown-menu'
-import { checkAgentEngine, fetchAgentEngines, fetchEngineModels } from '@/features/agent-runtime/api'
+import { AGENT_ENGINE_CHECKED_EVENT, checkAgentEngine, fetchAgentEngines, fetchEngineModels } from '@/features/agent-runtime/api'
 import { runtimeProfileOptions } from '@/features/agent-runtime/api-profiles'
 import { AGENT_ENGINE_IDS, type AgentEngineID } from '@/features/agent-runtime/types'
 import type { ConversationConfigChanges, ConversationConfigController } from '@/features/conversation-config/types'
 import { fetchModelCatalog, fetchProjectSettings, fetchSettings } from '@/features/settings/api'
+import { GLOBAL_SETTINGS_TARGET, projectSettingsTarget, subscribeSettingsTarget } from '@/features/settings/query'
 import { selectableModelProfiles } from '@/features/settings/model-profiles'
 import { normalizeThinkingLevel } from '@/features/settings/thinking-levels'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -104,9 +105,32 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
   const choicesCache = useRef<{ key: string; at: number; choices: RuntimeChoice[] } | null>(null)
   const current = controller.snapshot?.runtime?.kind ?? 'native'
   const draftStory = controller.binding?.mode === 'interactive' && !controller.binding.story_id
-  const cacheKey = [controller.binding?.project_id ?? '', controller.snapshot?.agent_kind ?? '', controller.snapshot?.custom_agent_id ?? '', controller.snapshot?.profile_id ?? '', revision].join('|')
+  const cacheKey = [JSON.stringify(controller.binding), controller.snapshot?.revision ?? '', revision].join('|')
+  const visibleChoices = choicesCache.current?.key === cacheKey ? choices : []
   // Cached choices stay selectable while an opportunistic refresh runs.
-  const selectionDisabled = disabled || !controller.initialized || controller.loading || runActive || controller.saving || Boolean(pending) || (loading && !choices.length) || draftStory
+  const selectionDisabled = disabled || !controller.initialized || controller.loading || runActive || controller.saving || Boolean(pending) || (loading && !visibleChoices.length) || draftStory
+
+  useEffect(() => {
+    const invalidate = () => {
+      choicesCache.current = null
+      setRevision(value => value + 1)
+    }
+    const target = controller.binding?.project_id
+      ? projectSettingsTarget(controller.binding.project_id) : GLOBAL_SETTINGS_TARGET
+    let previousSettings = ''
+    const unsubscribe = subscribeSettingsTarget(target, snapshot => {
+      // Fetching an identical snapshot must not trigger a refresh loop.
+      const signature = JSON.stringify(snapshot.effective ?? {})
+      if (signature === previousSettings) return
+      previousSettings = signature
+      invalidate()
+    })
+    window.addEventListener(AGENT_ENGINE_CHECKED_EVENT, invalidate)
+    return () => {
+      unsubscribe()
+      window.removeEventListener(AGENT_ENGINE_CHECKED_EVENT, invalidate)
+    }
+  }, [controller.binding?.project_id])
 
   useEffect(() => {
     if (!open) return
@@ -119,6 +143,9 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
       for (const kind of pendingKinds) autoChecked.current.add(kind)
       console.info('[conversation-config] checking engines without cached status', { engines: pendingKinds })
       void Promise.allSettled(pendingKinds.map(kind => checkAgentEngine(kind))).then(() => {
+        // Checks can finish while the submenu is closed. Retire its old
+        // unchecked snapshot so reopening observes the completed probes.
+        choicesCache.current = null
         if (active) setRevision(value => value + 1)
       })
     }
@@ -179,7 +206,7 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
       {/* Narrow screens overlay the parent menu to keep all choices in view. */}
       <DropdownMenuSubContent avoidCollisions={!narrow} className="max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto w-64 max-w-[calc(100vw-1rem)] border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-1.5 text-[var(--nova-text)] max-[700px]:w-56 max-[700px]:[translate:calc(-1*var(--radix-popper-anchor-width))_0]">
         <DropdownMenuGroup>
-          {choices.map(choice => <div key={choice.kind}>
+          {visibleChoices.map(choice => <div key={choice.kind}>
             {/* A failed defaults write can leave the conversation switched. Allow reselecting it to retry. */}
             <DropdownMenuItem disabled={selectionDisabled || (choice.kind === current && !controller.error) || (!choice.changes && !choice.unchecked)}
               aria-label={t(`agentRuntime.${choice.kind}`)} aria-current={choice.kind === current ? 'true' : undefined}
@@ -189,7 +216,7 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
             </DropdownMenuItem>
             {choice.reason && <p className="px-1.5 pb-1 text-xs text-muted-foreground">{t(choice.reason)}</p>}
           </div>)}
-          {loading && !choices.length && <p role="status" className="px-1.5 py-1 text-xs">{t('agentRuntime.checking')}</p>}
+          {loading && !visibleChoices.length && <p role="status" className="px-1.5 py-1 text-xs">{t('agentRuntime.checking')}</p>}
           <DropdownMenuItem disabled={configurationDisabled} onSelect={onConfigure}>{t('agentRuntime.configure')}</DropdownMenuItem>
         </DropdownMenuGroup>
         <p className="whitespace-normal px-1.5 py-1 text-[11px] text-muted-foreground">

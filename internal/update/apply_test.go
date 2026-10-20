@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -104,12 +105,18 @@ func TestStartApplyProcessKeepsUpdaterOutputInTransactionLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := startApplyProcess(ApplyInvocation{
-		Executable: executable,
-		Args:       []string{executable, "-test.run=TestApplyProcessHelper", "--", manifestPath},
-		Env:        append(os.Environ(), "DENOVA_TEST_APPLY_HELPER=1"),
-	}); err != nil {
+	// Break only the subprocess's output pipes, never the test runner's.
+	reader, writer, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
+	}
+	_ = reader.Close()
+	defer writer.Close()
+	cmd := exec.Command(executable, "-test.run=^TestApplyProcessBrokenOutputParent$", "--", manifestPath)
+	cmd.Env = append(os.Environ(), "DENOVA_TEST_APPLY_PARENT=1")
+	cmd.Stdout, cmd.Stderr = writer, writer
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("handoff with disconnected output: %v", err)
 	}
 	log, err := os.ReadFile(filepath.Join(filepath.Dir(sourceDir), applyLogFileName))
 	if err != nil {
@@ -152,5 +159,61 @@ func TestApplySchedulerReturnsHandoffFailureWithoutExiting(t *testing.T) {
 	scheduler := ApplyScheduler{ManifestPath: path, Manifest: ApplyManifest{UpdaterExecutable: updater}, Start: func(ApplyInvocation) error { return cause }, Shutdown: func() { t.Error("closed app after failed handoff") }, Exit: func(int) { t.Error("exited after failed handoff") }}
 	if err := scheduler.Schedule(context.Background()); !errors.Is(err, cause) {
 		t.Fatal(err)
+	}
+}
+
+func TestApplyProcessBrokenOutputParent(t *testing.T) {
+	if os.Getenv("DENOVA_TEST_APPLY_PARENT") != "1" {
+		t.Skip("helper process only")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		os.Exit(2)
+	}
+	path := os.Args[len(os.Args)-1]
+	if err := startApplyProcess(ApplyInvocation{
+		Executable: executable,
+		Args:       []string{executable, "-test.run=^TestApplyProcessHelper$", "--", path},
+		Env:        append(os.Environ(), "DENOVA_TEST_APPLY_HELPER=1"),
+	}); err != nil {
+		os.Exit(3)
+	}
+	os.Exit(0)
+}
+
+func TestStartApplyProcessRejectsUnavailableOutputLog(t *testing.T) {
+	install := t.TempDir()
+	source := filepath.Join(updateDataDir(install), "pending-test", releasePackageRootName)
+	writeUpdateTestPackage(t, source, updateTestPackageContents{Skill: "new skill"})
+	path := filepath.Join(filepath.Dir(source), manifestFileName)
+	if err := writeManifest(path, ApplyManifest{
+		ID: "blocked-log", State: PhaseWaiting, Version: "0.2.0",
+		InstallDir: install, SourceDir: source,
+		BackupDir: filepath.Join(filepath.Dir(source), "backup"),
+		TargetExecutable: filepath.Join(install, "nova"),
+		UpdaterExecutable: filepath.Join(source, updaterExecutableName()),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := readManifest(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(manifest.LogPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = startApplyProcess(ApplyInvocation{
+		Executable: executable, Args: []string{executable, "-test.run=^TestApplyProcessHelper$", "--", path},
+		Env: append(os.Environ(), "DENOVA_TEST_APPLY_HELPER=1"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "open updater output log") {
+		t.Fatalf("unavailable log did not reject launch: %v", err)
+	}
+	if _, err := os.Stat(path + ".accepted"); !os.IsNotExist(err) {
+		t.Fatalf("updater started despite unavailable log: %v", err)
 	}
 }

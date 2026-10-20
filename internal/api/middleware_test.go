@@ -101,6 +101,13 @@ func TestPlatformManagementHostOnlyClassification(t *testing.T) {
 		{"/api/platform/manage/development", http.MethodGet, false},
 		{"/api/platform/manage/projects/p1/extensions", http.MethodGet, false},
 		{"/api/platform/manage/instances/one", http.MethodPatch, false},
+		{"/api/platform/manage/instances/one", http.MethodDelete, false},
+		{"/api/platform/manage/runtimes/one/consumers/two", http.MethodDelete, false},
+		{"/api/platform/manage/projects/p1/plugins/example/content", http.MethodPost, false},
+		{"/api/platform/manage", http.MethodPost, true},
+		{"/api/platform/manage/new-action", http.MethodPost, true},
+		{"/api/platform/manage/runtimes/plugin/extra", http.MethodPost, true},
+		{"/api/platform/manage/projects/p1/extensions/extra", http.MethodPut, true},
 		{"/api/platform/manage/instances/one/stop", http.MethodPost, false},
 		{"/api/platform/manage/runtimes/one/stop", http.MethodPost, false},
 		{"/api/platform/manage/game-preferences", http.MethodPatch, false},
@@ -150,6 +157,10 @@ func TestPlatformManagementReadsServeAuthenticatedLANClients(t *testing.T) {
 	cookie := strings.Split(login.Header().Get("Set-Cookie"), ";")[0]
 	if cookie == "" {
 		t.Fatal("login returned no session cookie")
+	}
+	unauthenticated := ut.PerformRequest(server.engine.Engine, http.MethodGet, "/api/platform/manage/runtimes", nil, ut.Header{Key: "X-Forwarded-For", Value: "192.168.1.8"})
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated management read: %d %s", unauthenticated.Code, unauthenticated.Body.String())
 	}
 	remote := []ut.Header{{Key: "X-Forwarded-For", Value: "192.168.1.8"}, {Key: "Cookie", Value: cookie}}
 

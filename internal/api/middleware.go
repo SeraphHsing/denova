@@ -83,18 +83,24 @@ func platformManagementHostOnly(path, method string) bool {
 	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(path, "/api/platform/manage"), "/"), "/")
 	if len(parts) == 0 || parts[0] == "" {
-		return false
-	}
-	switch parts[0] {
-	case "packages", "candidates", "development", "plugin-actions":
 		return true
-	case "runtimes":
-		return len(parts) == 2 && parts[1] == "plugin"
-	case "instances":
-		// A new instance only becomes usable through a loopback runtime.
-		return len(parts) == 1 || (len(parts) == 3 && (parts[2] == "open" || parts[2] == "upgrade"))
 	}
-	return false
+	// Only known non-host writes are allowed from an authenticated LAN
+	// browser. New mutating routes require an explicit policy decision.
+	switch parts[0] {
+	case "game-preferences":
+		return !(len(parts) == 1 && method == "PATCH")
+	case "instances":
+		return !((len(parts) == 2 && (method == "PATCH" || method == "DELETE")) ||
+			(len(parts) == 3 && parts[2] == "stop" && method == "POST"))
+	case "runtimes":
+		return !((len(parts) == 3 && parts[2] == "stop" && method == "POST") ||
+			(len(parts) == 4 && parts[2] == "consumers" && method == "DELETE"))
+	case "projects":
+		return !((len(parts) == 3 && parts[2] == "extensions" && method == "PUT") ||
+			(len(parts) == 5 && parts[2] == "plugins" && parts[4] == "content" && method == "POST"))
+	}
+	return true
 }
 
 func abortWithLocalizedError(c *app.RequestContext, status int, key string) {

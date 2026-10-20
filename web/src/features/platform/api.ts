@@ -148,20 +148,22 @@ export const managementBase = '/api/platform/manage'
 export function hostOnlyManagement(path: string, method = 'GET'): boolean {
   const normalized = method.toUpperCase()
   if (normalized === 'GET' || normalized === 'HEAD' || normalized === 'OPTIONS') return false
-  const [section, second, third] = path.split('?')[0].split('/').filter(Boolean)
+  const parts = path.split('?')[0].split('/').filter(Boolean)
+  const [section, , third, , fifth] = parts
   switch (section) {
-    case 'packages':
-    case 'candidates':
-    case 'development':
-    case 'plugin-actions':
-      return true
-    case 'runtimes':
-      return second === 'plugin'
+    case 'game-preferences':
+      return !(parts.length === 1 && normalized === 'PATCH')
     case 'instances':
-      // A new instance only becomes usable through a loopback runtime.
-      return !second || third === 'open' || third === 'upgrade'
+      return !((parts.length === 2 && (normalized === 'PATCH' || normalized === 'DELETE'))
+        || (parts.length === 3 && third === 'stop' && normalized === 'POST'))
+    case 'runtimes':
+      return !((parts.length === 3 && third === 'stop' && normalized === 'POST')
+        || (parts.length === 4 && third === 'consumers' && normalized === 'DELETE'))
+    case 'projects':
+      return !((parts.length === 3 && third === 'extensions' && normalized === 'PUT')
+        || (parts.length === 5 && third === 'plugins' && fifth === 'content' && normalized === 'POST'))
     default:
-      return false
+      return true
   }
 }
 
