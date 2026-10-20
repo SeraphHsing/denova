@@ -55,7 +55,29 @@ func (s *InteractiveAppService) SubmitAgentCommand(ctx context.Context, command 
 	if err != nil {
 		return agentrun.CommandReceipt{}, err
 	}
-	return bound.Submit(ctx, agentruntime.Command{Kind: command.Kind, CommandID: command.CommandID, OperationID: command.OperationID, TargetCommandID: command.TargetCommandID, Reason: command.Reason, Input: command.Input}, emit)
+	receipt, err := bound.Submit(ctx, agentruntime.Command{Kind: command.Kind, CommandID: command.CommandID, OperationID: command.OperationID, TargetCommandID: command.TargetCommandID, Reason: command.Reason, Input: command.Input}, emit)
+	if err != nil || command.Kind != agentexecution.CommandAbort {
+		return receipt, err
+	}
+	// A live Abort is distinct from recovery Abort, but both must settle the
+	// same canonical input. Never abandon Native inputs or another operation.
+	store := s.store()
+	snapshot, err := store.Snapshot(target.info.StoryID, target.info.BranchID)
+	if err != nil {
+		return receipt, err
+	}
+	for _, input := range snapshot.PendingPlayerInputs {
+		if !strings.HasPrefix(input.AgentOperationID, "external-game-") {
+			continue
+		}
+		if target.info.CommandID != "" && input.AgentCommandID != target.info.CommandID {
+			continue
+		}
+		if err := store.AbandonPendingTurn(target.info.StoryID, target.info.BranchID, input.ID); err != nil {
+			return receipt, err
+		}
+	}
+	return receipt, nil
 }
 
 func interactiveAgentCommandOptions(target interactiveAgentCommandTarget) agentrun.Options {
