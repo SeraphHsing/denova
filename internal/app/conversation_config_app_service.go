@@ -406,6 +406,9 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 		}
 		var suspendedController *agentruntime.ExternalController
 		var suspendedCommandID string
+		if pending != nil && next.Engine().Kind == config.RuntimeNative {
+			return conversationconfig.Snapshot{}, conversationconfig.ErrRuntimeCapabilityUnsupported
+		}
 		if pending != nil {
 			// Only an entirely settled suspended external task can be handed to a
 			// different provider. Its canonical input and draft stay in Story Journal.
