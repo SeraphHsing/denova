@@ -404,21 +404,45 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 		if err != nil {
 			return conversationconfig.Snapshot{}, err
 		}
+		var suspendedController *agentruntime.ExternalController
+		var suspendedCommandID string
 		if pending != nil {
-			return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive
-		}
-		if err := runtime.ReleaseIdleForEngineSwitch(ctx, options); err != nil && !errors.Is(err, agentexecution.ErrRuntimeProjectionUnavailable) {
-			if errors.Is(err, agentschema.ErrSessionBusy) {
-				return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive
+			// Only an entirely settled suspended external task can be handed to a
+			// different provider. Its canonical input and draft stay in Story Journal.
+			snapshot, err := store.Snapshot(binding.StoryID, options.BranchID)
+			if err != nil { return conversationconfig.Snapshot{}, err }
+			for _, input := range snapshot.PendingPlayerInputs {
+				if input.ID == pending.PlayerInputID {
+					suspendedCommandID = input.AgentCommandID
+					break
+				}
 			}
-			return conversationconfig.Snapshot{}, err
+			if suspendedCommandID == "" { return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive }
+			control, selected, err := a.externalController(options)
+			if err != nil { return conversationconfig.Snapshot{}, err }
+			if !selected { return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive }
+			status, err := control.Status(ctx)
+			if err != nil { return conversationconfig.Snapshot{}, err }
+			if status.Phase != agentrun.RunPhaseSuspended { return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive }
+			suspendedController = control
+		} else {
+			if err := runtime.ReleaseIdleForEngineSwitch(ctx, options); err != nil && !errors.Is(err, agentexecution.ErrRuntimeProjectionUnavailable) {
+				if errors.Is(err, agentschema.ErrSessionBusy) {
+					return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive
+				}
+				return conversationconfig.Snapshot{}, err
+			}
 		}
 		if next.Engine().Kind != config.RuntimeNative {
 			_, release, err := a.AgentEngines().Acquire(ctx, next.Engine(), runtimeCfg)
-			if err != nil {
+			if err != nil { return conversationconfig.Snapshot{}, err }
+			release()
+		}
+		if suspendedController != nil {
+			if baseRevision != current.Revision { return conversationconfig.Snapshot{}, conversationconfig.ErrRevisionConflict }
+			if err := suspendedController.ReleaseSuspendedGameForEngineSwitch(ctx, suspendedCommandID); err != nil {
 				return conversationconfig.Snapshot{}, err
 			}
-			release()
 		}
 	}
 	return store.SetBranchRuntimeConfig(binding.StoryID, binding.BranchID, next, baseRevision)
