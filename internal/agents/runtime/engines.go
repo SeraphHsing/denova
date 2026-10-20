@@ -11,8 +11,10 @@ import (
 	"denova/config"
 	"denova/internal/agents/conversationconfig"
 	"denova/internal/agents/runtime/external"
+	"denova/internal/agents/runtime/external/antigravity"
 	"denova/internal/agents/runtime/external/claude"
 	"denova/internal/agents/runtime/external/codex"
+	"denova/internal/agents/runtime/external/grok"
 	"denova/internal/hostruntime"
 )
 
@@ -31,6 +33,10 @@ func VersionUnsupportedReasonKey(err error) string {
 		return "agentRuntime.incompatibleVersion"
 	case errors.Is(err, claude.ErrVersionUnsupported):
 		return "agentRuntime.claudeIncompatibleVersion"
+	case errors.Is(err, antigravity.ErrVersionUnsupported):
+		return "agentRuntime.antigravityIncompatibleVersion"
+	case errors.Is(err, grok.ErrVersionUnsupported):
+		return "agentRuntime.grokIncompatibleVersion"
 	default:
 		return ""
 	}
@@ -66,7 +72,25 @@ type engineEntry struct {
 func NewEngines() *Engines {
 	return &Engines{apiConnections: make(map[external.Connection]struct{}), apiFactory: connectRuntimeAPI, entries: map[config.RuntimeID]*engineEntry{config.RuntimeCodex: {
 		id: config.RuntimeCodex, state: external.ConnectionState{Status: "unchecked"}, factory: connectCodex,
-	}, config.RuntimeClaude: {id: config.RuntimeClaude, state: external.ConnectionState{Status: "unchecked"}, factory: connectClaude}}}
+	}, config.RuntimeClaude: {id: config.RuntimeClaude, state: external.ConnectionState{Status: "unchecked"}, factory: connectClaude},
+		config.RuntimeGrok:        {id: config.RuntimeGrok, state: external.ConnectionState{Status: "unchecked"}, factory: connectGrok},
+		config.RuntimeAntigravity: {id: config.RuntimeAntigravity, state: external.ConnectionState{Status: "unchecked"}, factory: connectAntigravity}}}
+}
+
+func connectGrok(ctx context.Context) (external.Connection, error) {
+	executable := hostruntime.DiscoverGrok(os.Environ())
+	if executable == "" {
+		return nil, ErrEngineNotInstalled
+	}
+	return grok.Connect(ctx, grok.ProcessOptions{Executable: executable})
+}
+
+func connectAntigravity(ctx context.Context) (external.Connection, error) {
+	executable := hostruntime.DiscoverAntigravity(os.Environ())
+	if executable == "" {
+		return nil, ErrEngineNotInstalled
+	}
+	return antigravity.Connect(ctx, antigravity.ProcessOptions{Executable: executable})
 }
 
 func connectClaude(ctx context.Context) (external.Connection, error) {
@@ -91,7 +115,7 @@ func connectCodex(ctx context.Context) (external.Connection, error) {
 
 func (engines *Engines) Catalog() []EngineDescriptor {
 	items := []EngineDescriptor{engineDescriptor(config.RuntimeNative)}
-	for _, id := range []config.RuntimeID{config.RuntimeCodex, config.RuntimeClaude} {
+	for _, id := range []config.RuntimeID{config.RuntimeCodex, config.RuntimeClaude, config.RuntimeGrok, config.RuntimeAntigravity} {
 		entry := engines.entries[id]
 		entry.mu.Lock()
 		items = append(items, entry.descriptor())
@@ -147,6 +171,12 @@ func (entry *engineEntry) connect(ctx context.Context) error {
 		if entry.id == config.RuntimeClaude && entry.state.Status == "not_installed" {
 			entry.state.ReasonKey = "agentRuntime.claudeNotInstalled"
 		}
+		if entry.id == config.RuntimeGrok && entry.state.Status == "not_installed" {
+			entry.state.ReasonKey = "agentRuntime.grokNotInstalled"
+		}
+		if entry.id == config.RuntimeAntigravity && entry.state.Status == "not_installed" {
+			entry.state.ReasonKey = "agentRuntime.antigravityNotInstalled"
+		}
 		return err
 	}
 	entry.connection = connection
@@ -173,8 +203,11 @@ func (engines *Engines) Check(ctx context.Context, id config.RuntimeID) (EngineD
 		return entry.descriptor(), nil
 	}
 	state, err := entry.connection.Check(ctx)
-	if err != nil {
+	if err != nil && state.ReasonKey == "" {
 		state = external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.connectionFailed"}
+	}
+	if key := VersionUnsupportedReasonKey(err); key != "" {
+		state = external.ConnectionState{Status: "incompatible", ReasonKey: key}
 	}
 	entry.state = state
 	item := engineDescriptor(id)
@@ -237,6 +270,10 @@ func (engines *Engines) Acquire(ctx context.Context, selection config.RuntimeSel
 		modelID, effort = selection.Codex.Model, selection.Codex.Effort
 	case config.RuntimeClaude:
 		modelID, effort = selection.Claude.Model, selection.Claude.Effort
+	case config.RuntimeGrok:
+		modelID, effort = selection.Grok.Model, selection.Grok.Effort
+	case config.RuntimeAntigravity:
+		modelID, effort = selection.Antigravity.Model, selection.Antigravity.Effort
 	default:
 		return nil, nil, ErrEngineNotFound
 	}

@@ -12,6 +12,11 @@ Denova records major user-visible features, important compatibility or data chan
 
 ## [Unreleased]
 
+### Added / 新增
+
+- 创作、通用对话与游戏 Agent 新增 Grok Build 和 Antigravity CLI 执行引擎，支持读取本机 CLI 模型、保存独立引擎设置和切换会话模型。
+- Writing, General Chat, and Game Agents add Grok Build and Antigravity CLI execution engines, with local CLI model discovery, independent engine settings, and per-conversation model selection.
+
 ## [v0.6.2] - 2026-10-19
 
 ### Brief / 简要说明
