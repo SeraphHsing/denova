@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -111,55 +112,49 @@ func TestGameConversationConfigCanRepairMissingModelProfile(t *testing.T) {
 
 func TestGameConversationConfigPatchExternalModelFields(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
+		name string
 		runtime config.RuntimeSelection
-		patch   ConversationConfigPatch
-		model   string
+		patch string
 	}{
 		{
 			name: "grok",
 			runtime: config.RuntimeSelection{Kind: config.RuntimeGrok, Grok: &config.GrokRuntimeSettings{Model: "old-model"}},
-			patch: ConversationConfigPatch{Grok: &config.GrokRuntimeSettings{Model: "new-model"}},
-			model: "new-model",
+			patch: `{"grok":{"model":"new-model"}}`,
 		},
 		{
 			name: "antigravity",
 			runtime: config.RuntimeSelection{Kind: config.RuntimeAntigravity, Antigravity: &config.AntigravityRuntimeSettings{Model: "old-model"}},
-			patch: ConversationConfigPatch{Antigravity: &config.AntigravityRuntimeSettings{Model: "new-model"}},
-			model: "new-model",
+			patch: `{"antigravity":{"model":"new-model"}}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			application := newExecutionProfileTestApp(t)
-			story, err := application.CreateInteractiveStory(interactive.CreateStoryRequest{Title: tc.name, StoryTellerID: "classic"})
-			if err != nil {
-				t.Fatal(err)
+			application.cfg.AgentRuntimes.InteractiveStory = &config.RuntimePreferences{
+				Selected: tc.runtime.Kind, Grok: tc.runtime.Grok, Antigravity: tc.runtime.Antigravity,
 			}
-			binding := ConversationConfigBinding{Mode: ConversationModeInteractive, ProjectID: application.ProjectID(), StoryID: story.ID, BranchID: "main"}
+			binding := ConversationConfigBinding{Mode: ConversationModeInteractive, ProjectID: application.ProjectID()}
 			initial, err := application.ConversationConfig(t.Context(), binding)
-			if err != nil {
-				t.Fatal(err)
+			if err != nil { t.Fatal(err) }
+			if initial.Engine().Kind != tc.runtime.Kind { t.Fatalf("unexpected draft engine: %#v",initial) }
+			var patch ConversationConfigPatch
+			if err := json.Unmarshal([]byte(tc.patch), &patch); err != nil { t.Fatal(err) }
+			updated, err := application.PatchConversationConfig(t.Context(), binding, patch, 0)
+			if err != nil { t.Fatal(err) }
+			if updated.Engine().Kind != tc.runtime.Kind || updated.Revision != 0 {
+				t.Fatalf("model patch was not applied: %#v", updated)
 			}
-			previous := initial.Config
-			previous.Runtime = &tc.runtime
-			saved, err := application.interactive.SetBranchRuntimeConfig(story.ID, "main", previous, initial.Revision)
-			if err != nil {
-				t.Fatal(err)
-			}
-			// Exercise the application adapter that formerly dropped these two fields.
-			updated, err := application.PatchConversationConfig(t.Context(), binding, tc.patch, saved.Revision)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if updated.Revision != saved.Revision+1 || updated.Engine().Kind != tc.runtime.Kind {
-				t.Fatalf("model patch was not persisted: %#v", updated)
-			}
-			if updated.ProfileID != previous.ProfileID || updated.ThinkingLevel != previous.ThinkingLevel {
+			if updated.ProfileID != initial.ProfileID || updated.ThinkingLevel != initial.ThinkingLevel {
 				t.Fatalf("model patch changed native preferences: %#v", updated)
 			}
-			snapshot, err := application.interactive.Snapshot(story.ID, "main")
-			if err != nil || snapshot.TurnCount != 0 || len(snapshot.PendingPlayerInputs) != 0 {
-				t.Fatalf("model patch mutated story history: %+v err=%v", snapshot, err)
+			switch tc.runtime.Kind {
+			case config.RuntimeGrok:
+				if updated.Runtime == nil || updated.Runtime.Grok == nil || updated.Runtime.Grok.Model != "new-model" {
+					t.Fatalf("Grok model was discarded: %#v",updated)
+				}
+			case config.RuntimeAntigravity:
+				if updated.Runtime == nil || updated.Runtime.Antigravity == nil || updated.Runtime.Antigravity.Model != "new-model" {
+					t.Fatalf("Antigravity model was discarded: %#v",updated)
+				}
 			}
 		})
 	}
