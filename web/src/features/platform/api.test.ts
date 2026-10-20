@@ -54,6 +54,9 @@ describe('host-bound management actions', () => {
       ['/development', 'GET'],
       ['/packages/plugin', 'GET'],
       ['/instances/one', 'PATCH'],
+      ['/instances/one', 'DELETE'],
+      ['/runtimes/one/consumers/two', 'DELETE'],
+      ['/projects/p1/plugins/example/content', 'POST'],
       ['/instances/one/stop', 'POST'],
       ['/runtimes/one/stop', 'POST'],
       ['/game-preferences', 'PATCH'],
@@ -65,6 +68,9 @@ describe('host-bound management actions', () => {
 
   it('marks runtime starts and package installation as host-bound', () => {
     for (const [path, method] of [
+      ['/new-action', 'POST'],
+      ['/runtimes/plugin/extra', 'POST'],
+      ['/projects/p1/extensions/extra', 'PUT'],
       ['/instances', 'POST'],
       ['/instances/one/open', 'POST'],
       ['/instances/one/upgrade', 'POST'],
