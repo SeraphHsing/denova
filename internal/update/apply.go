@@ -12,6 +12,7 @@ import (
 )
 
 const applyRestartDelay = 500 * time.Millisecond
+const applyHandoffTimeout = 5 * time.Second
 
 type ApplyInvocation struct {
 	Executable string
@@ -167,13 +168,12 @@ func startApplyProcess(invocation ApplyInvocation) error {
 	// pipes whose reader is already gone, and a child's first write to such a pipe
 	// raises SIGPIPE and kills it before the handoff acknowledgement. Its output
 	// belongs in the transaction log, which also keeps failures diagnosable.
-	if output, err := os.OpenFile(manifest.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
-		defer output.Close()
-		cmd.Stdout, cmd.Stderr = output, output
-	} else {
-		slog.Warn("updater_output_log_unavailable", "path", manifest.LogPath, "error", err)
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	output, err := os.OpenFile(manifest.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("open updater output log %s: %w", manifest.LogPath, err)
 	}
+	defer output.Close()
+	cmd.Stdout, cmd.Stderr = output, output
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -188,7 +188,7 @@ func startApplyProcess(invocation ApplyInvocation) error {
 			_ = cmd.Process.Release()
 		}
 	}()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(applyHandoffTimeout)
 	for time.Now().Before(deadline) {
 		var id string
 		if err := readJSONFile(pathToManifest+".accepted", &id); err == nil && id == manifest.ID {
