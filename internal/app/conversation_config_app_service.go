@@ -52,9 +52,9 @@ type ConversationConfigPatch struct {
 	ThinkingLevel *string                       `json:"thinking_level,omitempty"`
 	ApprovalMode  *config.AgentApprovalMode     `json:"approval_mode,omitempty"`
 	Runtime       *config.RuntimeSelection      `json:"runtime,omitempty"`
-	Codex         *config.CodexRuntimeSettings  `json:"codex,omitempty"`
-	Claude        *config.ClaudeRuntimeSettings `json:"claude,omitempty"`
-	Grok          *config.GrokRuntimeSettings `json:"grok,omitempty"`
+	Codex         *config.CodexRuntimeSettings       `json:"codex,omitempty"`
+	Claude        *config.ClaudeRuntimeSettings      `json:"claude,omitempty"`
+	Grok          *config.GrokRuntimeSettings        `json:"grok,omitempty"`
 	Antigravity   *config.AntigravityRuntimeSettings `json:"antigravity,omitempty"`
 }
 
@@ -190,6 +190,8 @@ func (patch *ConversationConfigPatch) UnmarshalJSON(data []byte) error {
 		Runtime:       parsed.Runtime,
 		Codex:         parsed.Codex,
 		Claude:        parsed.Claude,
+		Grok:          parsed.Grok,
+		Antigravity:   parsed.Antigravity,
 	}
 	return nil
 }
