@@ -115,18 +115,21 @@ func (s *InteractiveAppService) recoverExternal(ctx context.Context, control *ag
 	if err != nil {
 		return AgentRuntimeRecoveryResult{}, err
 	}
-	if action.Kind == agentexecution.RuntimeRecoveryAbort && pending != nil {
-		// Settle only the original accepted input. No Turn/StateDelta is
-		// produced, so character state, dice and completed history are intact.
-		if err := cycle.store.AbandonPendingTurn(options.StoryID, options.BranchID, pending.PlayerInputID); err != nil {
-			rollbackInteractiveAttachTask(a, task, err)
-			return AgentRuntimeRecoveryResult{}, err
-		}
-	}
+	// Validate and settle the runtime first. If its recovery revision changed,
+	// the canonical story must remain resumable rather than being discarded.
 	run, err := control.Resume(ctx, action, s.externalGameFactory(cycle, task.ID()), task.Emit)
 	if err != nil {
 		rollbackInteractiveAttachTask(a, task, err)
 		return AgentRuntimeRecoveryResult{}, err
+	}
+	if action.Kind == agentexecution.RuntimeRecoveryAbort {
+		if err := settleAbortedExternalGameInput(cycle.store, options.StoryID, options.BranchID, input.Request.CommandID); err != nil {
+			// Resume installed a controller run; retire it even on filesystem
+			// failure so the next recovery request can reconcile the journal.
+			run.Wait(context.WithoutCancel(ctx))
+			rollbackInteractiveAttachTask(a, task, err)
+			return AgentRuntimeRecoveryResult{}, err
+		}
 	}
 	a.mu.Lock()
 	a.activeInteractiveRun.recoveryActions[recoveryActionKey(action)] = run.Receipt()
