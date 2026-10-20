@@ -12,6 +12,16 @@ Denova records major user-visible features, important compatibility or data chan
 
 ## [Unreleased]
 
+### Fixed / 修复
+
+- 修复游戏 Agent 断连或手动中止后残留的 Pending 回合导致后续无法继续，以及 Grok Build / Antigravity CLI 模型配置保存失败的问题；支持在旧 CLI 运行已暂停后切换到其他 CLI，使用原草稿、骰子结果和已确认剧情继续。提供明确放弃未完成回合的入口，不改写已提交人物状态或剧情。
+- Fixed stuck pending Game turns after disconnect or abort and missing Grok Build / Antigravity CLI model settings; suspended external Game turns can resume on another CLI while preserving accepted drafts, dice and committed history, or be explicitly discarded.
+
+### Compatibility / 兼容性
+
+- 放弃游戏回合会在故事日志中写入新的 `turn_abandoned` 审计事件；旧版 Denova 可能无法解析已产生此事件的故事文件。降级前请备份工作区。Native 引擎暂不接手 CLI 尚未提交的草稿，请先继续完成或放弃原回合。
+- Discarding a Game turn adds a `turn_abandoned` audit record; older Denova versions may not parse story journals containing this event. Back up the workspace before downgrading. Native cannot yet take over an uncommitted CLI draft.
+
 ## [v0.6.4] - 2026-10-20
 
 ### Brief / 简要说明

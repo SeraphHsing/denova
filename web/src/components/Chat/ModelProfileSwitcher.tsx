@@ -30,6 +30,7 @@ interface ModelProfileSwitcherProps {
   conversationConfig?: ConversationConfigController
   disabled?: boolean
   runActive?: boolean
+  onRuntimeChanged?: () => void | Promise<void>
 }
 
 interface SavingSelection {
@@ -41,8 +42,8 @@ interface SavingSelection {
 // horizontally so ellipsis still works without cutting off glyphs vertically.
 const MODEL_LABEL_OVERFLOW_CLASS = 'min-w-0 overflow-x-clip overflow-y-visible text-ellipsis whitespace-nowrap'
 
-export function ModelProfileSwitcher({ agentKey, workspace, conversationConfig, disabled = false, runActive = false }: ModelProfileSwitcherProps) {
-  const selector = useModelProfileSelector({ agentKey, workspace, conversationConfig, disabled, runActive })
+export function ModelProfileSwitcher({ agentKey, workspace, conversationConfig, disabled = false, runActive = false, onRuntimeChanged }: ModelProfileSwitcherProps) {
+  const selector = useModelProfileSelector({ agentKey, workspace, conversationConfig, disabled, runActive, onRuntimeChanged })
   const [open, setOpen] = useState(false)
   const pendingNavigationRef = useRef<(() => void) | null>(null)
   const navigation = useToolNavigation()
@@ -84,7 +85,7 @@ export function ModelProfileSwitcher({ agentKey, workspace, conversationConfig, 
         }}
       >
         {conversationConfig && <ConversationRuntimeMenu
-          controller={conversationConfig} runActive={runActive} disabled={disabled}
+          controller={conversationConfig} runActive={runActive} disabled={disabled} onRuntimeChanged={onRuntimeChanged}
           configurationDisabled={!navigation}
           onConfigure={() => {
             pendingNavigationRef.current = () => navigation?.open({ kind: 'config_resource', resource: 'agent_profile',
@@ -135,7 +136,7 @@ interface ModelProfileSelector {
   selectThinkingLevel: (level: string) => Promise<void>
 }
 
-function useModelProfileSelector({ agentKey, conversationConfig, disabled = false, runActive = false }: ModelProfileSelectorInput): ModelProfileSelector {
+function useModelProfileSelector({ agentKey, conversationConfig, disabled = false, runActive = false, onRuntimeChanged }: ModelProfileSelectorInput): ModelProfileSelector {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<LayeredSettings | null>(null)
   const [savingSelection, setSavingSelection] = useState<SavingSelection | null>(null)
@@ -215,6 +216,7 @@ function useModelProfileSelector({ agentKey, conversationConfig, disabled = fals
         ? { profile_id: selection.value }
         : { thinking_level: selection.value as ThinkingLevel })
       if (!saved) toast.error(t('chat.modelProfile.saveFailed'))
+      else void Promise.resolve(onRuntimeChanged?.()).catch(cause => console.warn('[conversation-config] refresh Game runtime failed', cause))
     } finally {
       setSavingSelection(null)
     }

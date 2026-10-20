@@ -86,12 +86,13 @@ async function loadChoices(controller: ConversationConfigController, only?: Agen
 }
 
 /** Model-menu selector. Opening or checking never switches the bound session. */
-export function ConversationRuntimeMenu({ controller, runActive, disabled = false, onConfigure, configurationDisabled = false }: {
+export function ConversationRuntimeMenu({ controller, runActive, disabled = false, onConfigure, configurationDisabled = false, onRuntimeChanged }: {
   controller: ConversationConfigController
   runActive: boolean
   disabled?: boolean
   onConfigure: () => void
   configurationDisabled?: boolean
+  onRuntimeChanged?: () => void | Promise<void>
 }) {
   const { t } = useTranslation()
   const narrow = useIsMobile('(max-width: 700px)')
@@ -190,6 +191,7 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
         if (await controller.patch(fresh.changes)) {
           console.info('[conversation-config] runtime switched', { from: current, to: choice.kind, binding: controller.binding })
           setOpen(false)
+          void Promise.resolve(onRuntimeChanged?.()).catch(cause => console.warn('[conversation-config] refresh Game runtime failed', cause))
         }
       }
     } catch (cause) {

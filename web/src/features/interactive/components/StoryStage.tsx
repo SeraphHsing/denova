@@ -377,7 +377,7 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
     setActiveSkillCommandIndex(0)
   }
 
-  const { commandSubmitting, deleteQueuedCommand, queueActionPendingCommandID, send, steerQueuedCommand, stop, suspend, resumeTask } = useStoryStageRuntime({
+  const { commandSubmitting, deleteQueuedCommand, queueActionPendingCommandID, send, steerQueuedCommand, stop, suspend, resumeTask, abandonPendingTurn } = useStoryStageRuntime({
     stageKey,
     storyId,
     branchId,
@@ -820,9 +820,13 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
               layout={{ projectId, creatingStory: storySetupVisible, isMobile, inputTextStyle, workspace, inputFloatRef, inputRef, t, attachmentDraftKey: stageKey }}
               editor={{ input, editingTurn, styleScenes, styleSceneQuery, styleSceneSuggestions, showSkillCommands, activeSkillCommandIndex, skillCommands, filteredSkillCommands, filteredBuiltInCommandItems, filteredSkillCommandItems, setStyleSceneQuery, setShowSkillCommands, setSkillCommandQuery, setActiveSkillCommandIndex }}
               story={{ storyId, branchTerminal, hotChoices, showHotChoices, canUseHotChoices }}
-              runtime={{ streaming, approvalReady, conversationConfig, abortPending: stageRun.runtime.abortPending, recoveryPaused: stageRun.runtime.recoveryPaused, recoveryAbortAvailable: stageRun.runtime.recoveryAbortAvailable, pendingInterruptionId: stageRun.runtime.pendingInterruptionId, operationId: stageRun.runtime.operationId, connection: stageRun.runtime.connection, commandSubmitting, queue: stageRun.runtime.queue, queueActionPendingCommandID }}
+              runtime={{ streaming, approvalReady, conversationConfig, abortPending: stageRun.runtime.abortPending, recoveryPaused: stageRun.runtime.recoveryPaused, recoveryAbortAvailable: stageRun.runtime.recoveryAbortAvailable, pendingInterruptionId: stageRun.runtime.pendingInterruptionId, phase: stageRun.runtime.phase, operationId: stageRun.runtime.operationId, connection: stageRun.runtime.connection, commandSubmitting, queue: stageRun.runtime.queue, queueActionPendingCommandID, onRuntimeChanged: async () => {
+                  if (!storyId) return
+                  const active = await getActiveInteractiveChat(storyId, branchId)
+                  interactiveAgentCommands.project(active, 'disconnected')
+                } }}
               dialogs={{ contextAnalysisOpen, contextAnalysisLoading, contextAnalysisError, contextAnalysis, tokenUsageOpen, tokenUsageMessages, replyEditTarget, setContextAnalysisOpen, setTokenUsageOpen, closeReplyEditor: () => setReplyEditTarget(null), saveReply: saveEditedReply }}
-              actions={{ cancelEditing, selectHotChoice, selectStyleScene, selectSkillCommand, handleInputChange, handleInputTriggerChange, handleTokenRemove, toggleHotChoices, openContextAnalysis, removeContextCompaction, send, steerQueuedCommand, deleteQueuedCommand, stop: stageRun.runtime.recoveryPaused || stageRun.runtime.connection !== 'connected' || !supportsRuntimeOperation(conversationConfig.snapshot, 'pause') ? stop : suspend }}
+              actions={{ abandonPendingTurn, cancelEditing, selectHotChoice, selectStyleScene, selectSkillCommand, handleInputChange, handleInputTriggerChange, handleTokenRemove, toggleHotChoices, openContextAnalysis, removeContextCompaction, send, steerQueuedCommand, deleteQueuedCommand, stop: stageRun.runtime.recoveryPaused || stageRun.runtime.connection !== 'connected' || !supportsRuntimeOperation(conversationConfig.snapshot, 'pause') ? stop : suspend }}
             />
           </section>
         </div>
