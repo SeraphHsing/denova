@@ -404,8 +404,18 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 		if err != nil {
 			return conversationconfig.Snapshot{}, err
 		}
-		if pending != nil {
-			return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive
+		if pending != nil && next.Engine().Kind == config.RuntimeNative {
+			// Native cannot consume an external Game draft's deterministic tool
+			// identity. Do not silently replay dice or state side effects.
+			return conversationconfig.Snapshot{}, fmt.Errorf("finish or abandon the interrupted CLI turn before switching to Native")
+		}
+		// Verify the destination before releasing the suspended source.
+		if next.Engine().Kind != config.RuntimeNative {
+			_, release, err := a.AgentEngines().Acquire(ctx, next.Engine(), runtimeCfg)
+			if err != nil {
+				return conversationconfig.Snapshot{}, err
+			}
+			release()
 		}
 		if err := runtime.ReleaseIdleForEngineSwitch(ctx, options); err != nil && !errors.Is(err, agentexecution.ErrRuntimeProjectionUnavailable) {
 			if errors.Is(err, agentschema.ErrSessionBusy) {
@@ -413,12 +423,38 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 			}
 			return conversationconfig.Snapshot{}, err
 		}
-		if next.Engine().Kind != config.RuntimeNative {
-			_, release, err := a.AgentEngines().Acquire(ctx, next.Engine(), runtimeCfg)
+		if pending != nil {
+			controller, selected, err := a.externalController(options)
 			if err != nil {
 				return conversationconfig.Snapshot{}, err
 			}
-			release()
+			if !selected {
+				return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive
+			}
+			// A cold restart may still project Running until the controller
+			// first observes that its process-local runner is gone.
+			if _, err := controller.Status(ctx); err != nil {
+				return conversationconfig.Snapshot{}, err
+			}
+			snapshot, err := store.Snapshot(binding.StoryID, options.BranchID)
+			if err != nil {
+				return conversationconfig.Snapshot{}, err
+			}
+			acceptedCommandID := ""
+			for _, input := range snapshot.PendingPlayerInputs {
+				if input.ID == pending.PlayerInputID {
+					acceptedCommandID = input.AgentCommandID
+					break
+				}
+			}
+			if acceptedCommandID == "" {
+				return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive
+			}
+			// Only detach a quiescent suspended CLI operation. Canonical
+			// PlayerInput, TurnDraft, dice and tool evidence remain durable.
+			if err := controller.DetachSuspendedGameForEngineSwitch(ctx, acceptedCommandID); err != nil {
+				return conversationconfig.Snapshot{}, err
+			}
 		}
 	}
 	return store.SetBranchRuntimeConfig(binding.StoryID, binding.BranchID, next, baseRevision)
