@@ -1,6 +1,9 @@
 package interactive
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestStoryTurnInterruptionPersistsForPendingPlayerInput(t *testing.T) {
 	dir := t.TempDir()
