@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { useEffect, useState, type ComponentProps, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { usePersistedUserSettings } from '@/hooks/usePersistedUserSettings'
 import { ModeRouter } from './ModeRouter'
 import type { Tab } from './TabController'
@@ -28,7 +29,7 @@ const writingChangeReviewMock = vi.hoisted(() => ({
 }))
 
 function withAppProviders(ui: ReactNode) {
-  return <TooltipProvider>{ui}</TooltipProvider>
+  return <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TooltipProvider>{ui}</TooltipProvider></QueryClientProvider>
 }
 
 vi.mock('@/lib/toast', () => ({ toast: toastMock }))
