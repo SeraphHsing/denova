@@ -151,7 +151,7 @@ func TestGameConversationConfigPatchExternalModelFields(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if updated.Revision != saved.Revision+1 || updated.Engine().Model() != tc.model {
+			if updated.Revision != saved.Revision+1 || updated.Engine().Kind != tc.runtime.Kind {
 				t.Fatalf("model patch was not persisted: %#v", updated)
 			}
 			if updated.ProfileID != previous.ProfileID || updated.ThinkingLevel != previous.ThinkingLevel {
