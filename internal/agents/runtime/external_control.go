@@ -309,6 +309,20 @@ func (control *ExternalController) Resume(ctx context.Context, action agentexecu
 }
 
 
+// AbortedCommand reports only an explicitly persisted terminal abort.
+// It supports crash reconciliation when control state committed before the
+// separate canonical Story abandonment event.
+func (control *ExternalController) AbortedCommand(ctx context.Context, commandID string) (bool, error) {
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	state, err := control.read(ctx)
+	if err != nil { return false, err }
+	if control.active != nil || state.Phase != agentrun.RunPhaseIdle { return false, nil }
+	receipt, found, err := state.receipt(commandID)
+	if err != nil { return false, err }
+	return found && receipt.Outcome == agentrun.OutcomeAborted, nil
+}
+
 // ReleaseSuspendedGameForEngineSwitch relinquishes the old provider operation
 // without resolving the canonical player input or discarding its turn draft.
 // The new engine resumes that input under a fresh controller command.
