@@ -3,8 +3,6 @@ package app
 import (
 	"encoding/json"
 	"testing"
-
-	"denova/config"
 )
 
 func TestConversationConfigPatchPreservesExternalModelSelection(t *testing.T) {
@@ -22,5 +20,4 @@ func TestConversationConfigPatchPreservesExternalModelSelection(t *testing.T) {
 			if !tc.check(patch) { t.Fatalf("CLI model patch was silently discarded: %+v", patch) }
 		})
 	}
-	_ = config.RuntimeNative
 }
