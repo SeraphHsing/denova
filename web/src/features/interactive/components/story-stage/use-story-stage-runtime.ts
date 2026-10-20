@@ -137,16 +137,17 @@ export function useStoryStageRuntime({
       })),
   })
 
-  async function send(override?: { message?: string; rewindTurnId?: string; attachments?: File[]; startOpening?: boolean }) {
+  async function send(override?: { message?: string; rewindTurnId?: string; attachments?: File[]; startOpening?: boolean; resumeAfterSwitch?: boolean }) {
     const startOpening = override?.startOpening === true
+    const resumeAfterSwitch = override?.resumeAfterSwitch === true
     const requestedMessage = (override?.message ?? input).trim()
     const files = override?.attachments || []
     const rewindTurnId = override?.rewindTurnId ?? editingTurnId
-    const resumeInterruptionID = !startOpening && !streaming && !rewindTurnId ? readStageRuntime().pendingInterruptionId.trim() : ''
+    const resumeInterruptionID = !startOpening && (!streaming || resumeAfterSwitch) && !rewindTurnId ? readStageRuntime().pendingInterruptionId.trim() : ''
     const resumeFromEmptyComposer = Boolean(!startOpening && resumeInterruptionID && !requestedMessage && files.length === 0)
     const message = resumeFromEmptyComposer ? 'Continue.' : requestedMessage
     const displayMessage = startOpening ? '' : resumeFromEmptyComposer ? t('chat.input.resume') : requestedMessage
-    if ((!message && files.length === 0 && !startOpening) || !storyId || branchTerminal || blocked || commandSubmittingRef.current) return false
+    if ((!message && files.length === 0 && !startOpening) || !storyId || branchTerminal || (blocked && !resumeAfterSwitch) || commandSubmittingRef.current) return false
     let attachmentUploads: ChatAttachmentUpload[] = []
     if (files.length) {
       try {
@@ -156,7 +157,7 @@ export function useStoryStageRuntime({
         return false
       }
     }
-    if (streaming || readStageRuntime().phase === 'suspended') {
+    if (!resumeAfterSwitch && (streaming || readStageRuntime().phase === 'suspended')) {
       const runtime = readStageRuntime()
       if (runtime.abortPending || !runtime.operationId || (runtime.phase !== 'suspended' && runtime.connection !== 'connected')) return false
       return submitFollowUp(message, attachmentUploads)
@@ -605,6 +606,15 @@ export function useStoryStageRuntime({
     setCommandSubmitting(true)
     try {
       const active = await getActiveInteractiveChat(storyId, branchId)
+      if (!active.runtime_recoverable && !active.active && active.pending_interruption_id) {
+        // The old suspended CLI was detached by model selection. Resume the
+        // same canonical input through a fresh operation on the new engine.
+        interactiveAgentCommands.project(active, 'disconnected')
+        commandSubmittingRef.current = false
+        setCommandSubmitting(false)
+        await send({ message: '', resumeAfterSwitch: true })
+        return
+      }
       const recovered = await interactiveAgentCommands.recover(active, true)
       setStageRuntime(current => ({ ...current, streamEventCursor: '' }))
       const controller = new AbortController()
