@@ -85,9 +85,19 @@ func (s *InteractiveAppService) recoverExternal(ctx context.Context, control *ag
 	if pending != nil {
 		resumeID = pending.ID
 	}
-	cycle, err := s.prepareInteractiveAgentCycle(ctx, interactiveAgentCycleRequest{CommandID: input.Request.CommandID, ResumeInterruptionID: resumeID, StoryID: options.StoryID, BranchID: options.BranchID, Message: input.Request.Message, Locale: input.Request.Locale, StyleScenes: input.Request.StyleScenes, AttachedFiles: input.Request.AttachedFiles, InputVisibility: input.Request.InputVisibility, RegenerateFromTurnID: input.RegenerateFromTurnID})
-	if err != nil {
-		return AgentRuntimeRecoveryResult{}, err
+	var cycle *interactiveAgentCycle
+	if action.Kind == agentexecution.RuntimeRecoveryAbort {
+		// Abort is a bookkeeping operation. A missing or disconnected model
+		// must not prevent users from settling the interrupted Game turn.
+		a := s.app
+		a.mu.RLock()
+		cycle = &interactiveAgentCycle{store: a.interactive, workspace: a.workspace, storyID: options.StoryID, branchID: options.BranchID}
+		a.mu.RUnlock()
+	} else {
+		cycle, err = s.prepareInteractiveAgentCycle(ctx, interactiveAgentCycleRequest{CommandID: input.Request.CommandID, ResumeInterruptionID: resumeID, StoryID: options.StoryID, BranchID: options.BranchID, Message: input.Request.Message, Locale: input.Request.Locale, StyleScenes: input.Request.StyleScenes, AttachedFiles: input.Request.AttachedFiles, InputVisibility: input.Request.InputVisibility, RegenerateFromTurnID: input.RegenerateFromTurnID})
+		if err != nil {
+			return AgentRuntimeRecoveryResult{}, err
+		}
 	}
 	a := s.app
 	task, err := apptask.NewDeferredWithContext(ctx, func(task *apptask.Task) error {
@@ -104,6 +114,14 @@ func (s *InteractiveAppService) recoverExternal(ctx context.Context, control *ag
 	})
 	if err != nil {
 		return AgentRuntimeRecoveryResult{}, err
+	}
+	if action.Kind == agentexecution.RuntimeRecoveryAbort && pending != nil {
+		// Settle only the original accepted input. No Turn/StateDelta is
+		// produced, so character state, dice and completed history are intact.
+		if err := cycle.store.AbandonPendingTurn(options.StoryID, options.BranchID, pending.PlayerInputID); err != nil {
+			rollbackInteractiveAttachTask(a, task, err)
+			return AgentRuntimeRecoveryResult{}, err
+		}
 	}
 	run, err := control.Resume(ctx, action, s.externalGameFactory(cycle, task.ID()), task.Emit)
 	if err != nil {
