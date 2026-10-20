@@ -55,7 +55,8 @@ for (const kind of ['writing', 'general', 'game'] as const) {
       })
       await page.route('**/api/agent-runtimes/*/models', route => route.fulfill({ json: { default_id: 'test-external', items: [{ id: 'test-external', display_name: `External model ${'long label '.repeat(12)}`, efforts: ['medium'] }] } }))
       const statuses: Record<string, string> = { native: 'ready', codex: 'ready', claude: 'ready', grok: 'ready', antigravity: 'ready' }
-      await page.route('**/api/agent-runtimes/codex/check', route => { statuses.codex = 'ready'; return route.fulfill({ json: { id: 'codex', status: 'ready' } }) })
+      let codexChecks = 0
+      await page.route('**/api/agent-runtimes/codex/check', route => { codexChecks += 1; statuses.codex = 'ready'; return route.fulfill({ json: { id: 'codex', status: 'ready' } }) })
       await page.route('**/api/agent-runtimes', route => route.fulfill({ json: { items: ['native', 'codex', 'claude', 'grok', 'antigravity'].map(id => ({ id, name_key: `agentRuntime.${id}`, status: statuses[id] })) } }))
       await page.goto('/')
       if (kind === 'writing') await openWritingAgent(page)
@@ -99,7 +100,8 @@ for (const kind of ['writing', 'general', 'game'] as const) {
         await expect(page.getByRole('menuitem', { name: 'Claude Code', exact: true })).toBeDisabled()
         await expect(page.getByText('未安装', { exact: true })).toBeVisible()
         await page.screenshot({ path: test.info().outputPath('unavailable-runtime.png'), animations: 'disabled' })
-        await page.getByRole('menuitem', { name: 'Codex', exact: true }).click()
+        // Opening the menu checks unknown engines without selecting them.
+        await expect.poll(() => codexChecks).toBe(1)
         await expect(page.getByText('尚未检查', { exact: true })).toHaveCount(0)
         await expect(page.getByRole('menuitem', { name: 'Codex', exact: true })).toBeEnabled()
         expect(switches).toEqual([])
