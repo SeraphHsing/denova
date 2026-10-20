@@ -7,6 +7,7 @@ import { createAgentDataMessage } from '@/lib/agent-ui-message'
 import { agentCommandRetryKey, isKnownAgentCommandOutcome, rememberAgentCommandID } from '@/lib/agent-command'
 import {
   compactInteractiveContext,
+  abandonInteractivePendingTurn,
   getActiveInteractiveChat,
   sendInteractiveMessage,
   streamActiveInteractiveChat,
@@ -628,6 +629,27 @@ export function useStoryStageRuntime({
     }
   }
 
+  async function abandonPendingTurn() {
+    if (!storyId || commandSubmittingRef.current) return
+    commandSubmittingRef.current = true
+    setCommandSubmitting(true)
+    try {
+      const current = await getActiveInteractiveChat(storyId, branchId)
+      const interruptionID = current.pending_interruption_id?.trim()
+      if (!interruptionID || current.active || current.phase !== 'idle') {
+        throw new Error(t('chat.runtime.operationChanged'))
+      }
+      await abandonInteractivePendingTurn(storyId, branchId, interruptionID)
+      interactiveAgentCommands.project(await getActiveInteractiveChat(storyId, branchId), 'disconnected')
+      await onDone({ silent: true })
+    } catch (error) {
+      appendError(error)
+    } finally {
+      commandSubmittingRef.current = false
+      setCommandSubmitting(false)
+    }
+  }
+
   function handleStreamError(error: unknown) {
     liveAccumulator.flush()
     liveAccumulator.finishMessages(isAbortError(error) ? 'cancelled' : 'success')
@@ -668,7 +690,7 @@ export function useStoryStageRuntime({
     ])
   }
 
-  return { commandSubmitting, deleteQueuedCommand, queueActionPendingCommandID, compactCurrentContext, send, steerQueuedCommand, stop, suspend, resumeTask }
+  return { commandSubmitting, deleteQueuedCommand, queueActionPendingCommandID, compactCurrentContext, abandonPendingTurn, send, steerQueuedCommand, stop, suspend, resumeTask }
 }
 
 function systemMessage(content: string) {
