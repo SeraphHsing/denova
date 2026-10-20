@@ -104,6 +104,7 @@ func TestPlatformManagementHostOnlyClassification(t *testing.T) {
 		{"/api/platform/manage/instances/one", http.MethodDelete, false},
 		{"/api/platform/manage/runtimes/one/consumers/two", http.MethodDelete, false},
 		{"/api/platform/manage/projects/p1/plugins/example/content", http.MethodPost, false},
+		{"/api/platform/manage", http.MethodPost, true},
 		{"/api/platform/manage/new-action", http.MethodPost, true},
 		{"/api/platform/manage/runtimes/plugin/extra", http.MethodPost, true},
 		{"/api/platform/manage/projects/p1/extensions/extra", http.MethodPut, true},

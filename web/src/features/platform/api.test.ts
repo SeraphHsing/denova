@@ -68,6 +68,7 @@ describe('host-bound management actions', () => {
 
   it('marks runtime starts and package installation as host-bound', () => {
     for (const [path, method] of [
+      ['/', 'POST'],
       ['/new-action', 'POST'],
       ['/runtimes/plugin/extra', 'POST'],
       ['/projects/p1/extensions/extra', 'PUT'],

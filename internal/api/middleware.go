@@ -83,7 +83,7 @@ func platformManagementHostOnly(path, method string) bool {
 	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(path, "/api/platform/manage"), "/"), "/")
 	if len(parts) == 0 || parts[0] == "" {
-		return false
+		return true
 	}
 	// Only known non-host writes are allowed from an authenticated LAN
 	// browser. New mutating routes require an explicit policy decision.
