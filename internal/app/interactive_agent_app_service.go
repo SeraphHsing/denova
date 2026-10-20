@@ -146,6 +146,14 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, reques
 	if operationActive {
 		return nil, ErrAgentOperationActive
 	}
+	_, resumeOptions, err := a.interactiveSessionRuntime(ConversationConfigBinding{
+		Mode: ConversationModeInteractive, ProjectID: a.ProjectID(),
+		StoryID: identity.request.StoryID, BranchID: identity.request.BranchID,
+	})
+	if err != nil { return nil, err }
+	if err := a.reconcileAbortedGameInputs(ctx, s.store(), resumeOptions); err != nil {
+		return nil, err
+	}
 
 	cycle, err := s.prepareInteractiveAgentCycle(ctx, interactiveAgentCycleRequest{
 		CommandID: identity.request.CommandID,
