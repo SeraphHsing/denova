@@ -432,6 +432,16 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 			if status.Phase != agentrun.RunPhaseSuspended { return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive }
 			suspendedController = control
 		} else {
+			// An external command may be suspended without a Game interruption
+			// event (for example, a crash before the first input was materialized).
+			// Never silently replace that still-live controller.
+			control, selected, err := a.externalController(options)
+			if err != nil { return conversationconfig.Snapshot{}, err }
+			if selected {
+				status, err := control.Status(ctx)
+				if err != nil { return conversationconfig.Snapshot{}, err }
+				if status.Phase != agentrun.RunPhaseIdle { return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive }
+			}
 			if err := runtime.ReleaseIdleForEngineSwitch(ctx, options); err != nil && !errors.Is(err, agentexecution.ErrRuntimeProjectionUnavailable) {
 				if errors.Is(err, agentschema.ErrSessionBusy) {
 					return conversationconfig.Snapshot{}, agentruntime.ErrOperationActive
