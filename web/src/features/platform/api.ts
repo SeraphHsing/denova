@@ -1,6 +1,7 @@
 import i18n from '@/i18n'
 import { APIError, jsonHeaders, requestJSON } from '@/lib/api-client/client'
 import { errorMessage } from '@/lib/error-diagnostics'
+import { remoteAccessIsLocal } from '@/features/remote-access/api'
 
 export type PackageKind = 'plugin' | 'game'
 export type ContributionContext = 'writing' | 'game' | 'general'
@@ -138,6 +139,41 @@ export interface RuntimeSnapshot {
 }
 export const managementBase = '/api/platform/manage'
 
+/**
+ * Host-bound management actions mirror the backend classification in
+ * internal/api/middleware.go: runtimes listen on loopback, package installation
+ * runs extension code on the Denova host, and previews resolve host paths.
+ * Remote browsers fail fast with a clear reason instead of a generic 403.
+ */
+export function hostOnlyManagement(path: string, method = 'GET'): boolean {
+  const normalized = method.toUpperCase()
+  if (normalized === 'GET' || normalized === 'HEAD' || normalized === 'OPTIONS') return false
+  const [section, second, third] = path.split('?')[0].split('/').filter(Boolean)
+  switch (section) {
+    case 'packages':
+    case 'candidates':
+    case 'development':
+    case 'plugin-actions':
+      return true
+    case 'runtimes':
+      return second === 'plugin'
+    case 'instances':
+      // A new instance only becomes usable through a loopback runtime.
+      return !second || third === 'open' || third === 'upgrade'
+    default:
+      return false
+  }
+}
+
+function localHostOnlyError(): APIError {
+  const message = i18n.t('platform.errors.LOCAL_HOST_ONLY')
+  return new APIError(message, {
+    status: 403,
+    code: 'LOCAL_HOST_ONLY',
+    payload: { code: 'LOCAL_HOST_ONLY', messageKey: 'platform.errors.LOCAL_HOST_ONLY' },
+  })
+}
+
 export interface ConfigurationProblem {
   messageKey: string
   fields?: { path: string[]; keyword: string }[]
@@ -181,6 +217,7 @@ export function management<T>(
   method = 'GET',
   body?: unknown,
 ): Promise<T> {
+  if (!remoteAccessIsLocal() && hostOnlyManagement(path, method)) return Promise.reject(localHostOnlyError())
   return requestJSON<T>(managementBase + path, {
     method,
     ...(body === undefined

@@ -27,10 +27,20 @@ func originalHome(env []string) string {
 	return filepath.Join(home, ".grok")
 }
 
+// configPath resolves the configuration the native CLI actually uses.
+// GROK_CONFIG_PATH can relocate it, so reading only ~/.grok/config.toml would
+// hide models the user configured elsewhere.
+func configPath(env []string) string {
+	if path := strings.TrimSpace(environmentValue(env, "GROK_CONFIG_PATH")); path != "" {
+		return path
+	}
+	return filepath.Join(originalHome(env), "config.toml")
+}
+
 // Import only inert model routing fields. Agent profiles, hooks, auth helper
 // commands, MCP servers and plugins never enter the private execution home.
 func modelConfiguration(env []string) ([]byte, bool, error) {
-	body, err := os.ReadFile(filepath.Join(originalHome(env), "config.toml"))
+	body, err := os.ReadFile(configPath(env))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, false, nil
 	}
@@ -73,7 +83,9 @@ func modelConfiguration(env []string) ([]byte, bool, error) {
 	}
 	if models, ok := source["models"].(map[string]any); ok {
 		selected := map[string]any{}
-		for _, name := range []string{"default", "default_reasoning_effort", "allowed_models"} {
+		// allowed_models is deliberately not imported: it would confine the
+		// isolated runtime to a stale subset and hide newer engine models.
+		for _, name := range []string{"default", "default_reasoning_effort"} {
 			if value, ok := models[name]; ok {
 				selected[name] = value
 			}

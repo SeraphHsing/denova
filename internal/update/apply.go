@@ -157,10 +157,23 @@ func startApplyProcess(invocation ApplyInvocation) error {
 	if err := os.Remove(pathToManifest + ".accepted"); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	manifest, err := readManifest(pathToManifest)
+	if err != nil {
+		return err
+	}
 	cmd := exec.Command(invocation.Executable, args...)
 	cmd.Env = invocation.Env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// The updater outlives this launch terminal. Inherited stdout/stderr may be
+	// pipes whose reader is already gone, and a child's first write to such a pipe
+	// raises SIGPIPE and kills it before the handoff acknowledgement. Its output
+	// belongs in the transaction log, which also keeps failures diagnosable.
+	if output, err := os.OpenFile(manifest.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+		defer output.Close()
+		cmd.Stdout, cmd.Stderr = output, output
+	} else {
+		slog.Warn("updater_output_log_unavailable", "path", manifest.LogPath, "error", err)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -175,15 +188,10 @@ func startApplyProcess(invocation ApplyInvocation) error {
 			_ = cmd.Process.Release()
 		}
 	}()
-	path := invocation.Args[len(invocation.Args)-1]
-	manifest, err := readManifest(path)
-	if err != nil {
-		return err
-	}
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		var id string
-		if err := readJSONFile(path+".accepted", &id); err == nil && id == manifest.ID {
+		if err := readJSONFile(pathToManifest+".accepted", &id); err == nil && id == manifest.ID {
 			accepted = true
 			return nil
 		}

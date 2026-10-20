@@ -55,6 +55,48 @@ func localHostEffectMiddleware(ctx context.Context, c *app.RequestContext) {
 	c.Next(ctx)
 }
 
+// platformManagementLocalHostMiddleware keeps only host-bound management
+// actions on loopback. Extension runtimes listen on 127.0.0.1, package
+// installation executes extension code here, and development previews resolve
+// host paths, so authenticated LAN browsers cannot use them. Management reads
+// and Project-scoped configuration stay available after login; a blanket gate
+// would also reject the read-only polling that renders the workbench.
+func platformManagementLocalHostMiddleware(ctx context.Context, c *app.RequestContext) {
+	if platformManagementHostOnly(string(c.Path()), string(c.Method())) && !isLocalClientIP(requestClientIP(c)) {
+		message := i18n.FromHeader(localeHeader(c)).T("api.access.localHostEffect")
+		c.AbortWithStatusJSON(consts.StatusForbidden, map[string]string{
+			"error":      message,
+			"code":       "LOCAL_HOST_ONLY",
+			"messageKey": "platform.errors.LOCAL_HOST_ONLY",
+		})
+		return
+	}
+	c.Next(ctx)
+}
+
+// platformManagementHostOnly classifies management actions that must run on the
+// Denova host. Classify new actions here when they start host runtimes, install
+// or preview host packages, or resolve host file paths.
+func platformManagementHostOnly(path, method string) bool {
+	if method == "GET" || method == "HEAD" || method == "OPTIONS" {
+		return false
+	}
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(path, "/api/platform/manage"), "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return false
+	}
+	switch parts[0] {
+	case "packages", "candidates", "development", "plugin-actions":
+		return true
+	case "runtimes":
+		return len(parts) == 2 && parts[1] == "plugin"
+	case "instances":
+		// A new instance only becomes usable through a loopback runtime.
+		return len(parts) == 1 || (len(parts) == 3 && (parts[2] == "open" || parts[2] == "upgrade"))
+	}
+	return false
+}
+
 func abortWithLocalizedError(c *app.RequestContext, status int, key string) {
 	message := i18n.FromHeader(localeHeader(c)).T(key)
 	c.AbortWithStatusJSON(status, map[string]string{"error": message})

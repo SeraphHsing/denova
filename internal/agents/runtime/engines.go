@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"time"
 
 	"denova/config"
 	"denova/internal/agents/conversationconfig"
@@ -60,14 +61,21 @@ type Engines struct {
 }
 
 type engineEntry struct {
-	mu         sync.Mutex
-	id         config.RuntimeID
-	factory    func(context.Context) (external.Connection, error)
-	connection external.Connection
-	state      external.ConnectionState
-	users      int
-	closed     bool
+	mu           sync.Mutex
+	id           config.RuntimeID
+	factory      func(context.Context) (external.Connection, error)
+	connection   external.Connection
+	state        external.ConnectionState
+	models       external.Models
+	modelsExpiry time.Time
+	users        int
+	closed       bool
 }
+
+// engineModelsTTL bounds repeated CLI model discovery while the runtime menu
+// reopens. An explicit Check invalidates it because login and CLI updates can
+// change the catalog.
+const engineModelsTTL = 5 * time.Minute
 
 func NewEngines() *Engines {
 	return &Engines{apiConnections: make(map[external.Connection]struct{}), apiFactory: connectRuntimeAPI, entries: map[config.RuntimeID]*engineEntry{config.RuntimeCodex: {
@@ -158,6 +166,7 @@ func (entry *engineEntry) connect(ctx context.Context) error {
 	if entry.connection != nil {
 		_ = entry.connection.Close()
 		entry.connection = nil
+		entry.models, entry.modelsExpiry = external.Models{}, time.Time{}
 	}
 	connection, err := entry.factory(ctx)
 	if err != nil {
@@ -198,6 +207,7 @@ func (engines *Engines) Check(ctx context.Context, id config.RuntimeID) (EngineD
 	if entry.connection != nil && entry.users == 0 {
 		_ = entry.connection.Close()
 		entry.connection = nil
+		entry.models, entry.modelsExpiry = external.Models{}, time.Time{}
 	}
 	if err := entry.connect(ctx); err != nil {
 		return entry.descriptor(), nil
@@ -222,17 +232,32 @@ func (engines *Engines) Models(ctx context.Context, id config.RuntimeID) (extern
 	}
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
+	if len(entry.models.Items) > 0 && time.Now().Before(entry.modelsExpiry) {
+		return entry.models, nil
+	}
 	if err := entry.connect(ctx); err != nil {
 		return external.Models{}, err
 	}
-	state, err := entry.connection.Check(ctx)
-	if err != nil {
-		return external.Models{}, err
+	// Only an unchecked connection probes here, so the first catalog read also
+	// establishes readiness. Ready connections never re-probe: doing that made
+	// every menu open spawn a CLI process, and one transient failure turned a
+	// working runtime into an unavailable one.
+	state := entry.connection.Status()
+	if state.Status == "unchecked" {
+		if _, err := entry.connection.Check(ctx); err != nil {
+			return external.Models{}, err
+		}
+		state = entry.connection.Status()
 	}
 	if state.Status != "ready" {
 		return external.Models{}, ErrEngineNotReady
 	}
-	return entry.connection.Models(ctx)
+	models, err := entry.connection.Models(ctx)
+	if err != nil {
+		return external.Models{}, err
+	}
+	entry.models, entry.modelsExpiry = models, time.Now().Add(engineModelsTTL)
+	return models, nil
 }
 
 // Acquire pins the connection from preflight through durable settlement. The

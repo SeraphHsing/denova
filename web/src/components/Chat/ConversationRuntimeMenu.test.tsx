@@ -82,17 +82,17 @@ describe('ConversationRuntimeMenu', () => {
     expect(screen.getAllByRole('menuitem', { name: '配置' }).every(item => item.getAttribute('aria-disabled') !== 'true')).toBe(true)
     expect(config.patch).not.toHaveBeenCalled()
   })
-  it('checks an unknown runtime without automatically switching', async () => {
+  it('checks an unknown runtime automatically without automatically switching', async () => {
     mocks.fetchAgentEngines.mockResolvedValueOnce({ items: [{ id: 'codex', status: 'unchecked' }] })
     mocks.checkAgentEngine.mockResolvedValue({ id: 'codex', status: 'ready' })
     const config = controller()
     render(menu(config))
     await openRuntime()
-    await user.click(screen.getByRole('menuitem', { name: 'Codex' }))
     await waitFor(() => expect(mocks.checkAgentEngine).toHaveBeenCalledWith('codex'))
-    await waitFor(() => expect(screen.queryByText('正在检查可用性…')).not.toBeInTheDocument())
     expect(config.patch).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('menuitem', { name: 'Codex' }))
+    const option = await screen.findByRole('menuitem', { name: 'Codex' })
+    await waitFor(() => expect(option).not.toHaveAttribute('aria-disabled', 'true'))
+    await user.click(option)
     await waitFor(() => expect(config.patch).toHaveBeenCalledOnce())
   })
   it('accepts a compatible API profile without CLI authentication', async () => {

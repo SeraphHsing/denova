@@ -3,11 +3,13 @@ package update
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -75,6 +77,66 @@ func TestApplySchedulerStartsUpdaterThenExits(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("process exit was not requested")
 	}
+}
+
+// A detached launch can leave the parent's stdout/stderr pipes without a reader.
+// The updater must write to the transaction log instead, otherwise its first
+// write raises SIGPIPE and the handoff never completes.
+func TestStartApplyProcessKeepsUpdaterOutputInTransactionLog(t *testing.T) {
+	installDir := t.TempDir()
+	sourceDir := filepath.Join(updateDataDir(installDir), "pending-test", releasePackageRootName)
+	writeUpdateTestPackage(t, sourceDir, updateTestPackageContents{
+		Executable: "new executable", Updater: "new updater", Skill: "new skill", Ripgrep: "new ripgrep", License: "new license",
+	})
+	manifest := ApplyManifest{
+		ID: "handoff-output", State: PhaseWaiting, Version: "0.2.0",
+		SourceDir:         sourceDir,
+		InstallDir:        installDir,
+		BackupDir:         filepath.Join(filepath.Dir(sourceDir), "backup"),
+		TargetExecutable:  filepath.Join(installDir, "nova"),
+		UpdaterExecutable: filepath.Join(sourceDir, updaterExecutableName()),
+	}
+	manifestPath := filepath.Join(filepath.Dir(sourceDir), manifestFileName)
+	if err := writeManifest(manifestPath, manifest); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := startApplyProcess(ApplyInvocation{
+		Executable: executable,
+		Args:       []string{executable, "-test.run=TestApplyProcessHelper", "--", manifestPath},
+		Env:        append(os.Environ(), "DENOVA_TEST_APPLY_HELPER=1"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	log, err := os.ReadFile(filepath.Join(filepath.Dir(sourceDir), applyLogFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(log), "helper updater output") {
+		t.Fatalf("updater output did not reach the transaction log: %q", log)
+	}
+}
+
+// TestApplyProcessHelper stands in for denova-updater inside the parent test
+// binary so the handoff runs on every platform.
+func TestApplyProcessHelper(t *testing.T) {
+	if os.Getenv("DENOVA_TEST_APPLY_HELPER") != "1" {
+		t.Skip("helper process only")
+	}
+	path := os.Args[len(os.Args)-1]
+	manifest, err := readManifest(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(3)
+	}
+	fmt.Fprintln(os.Stderr, "helper updater output")
+	if err := writeJSONFile(path+".accepted", manifest.ID, 0o600); err != nil {
+		os.Exit(4)
+	}
+	os.Exit(0)
 }
 
 func TestApplySchedulerReturnsHandoffFailureWithoutExiting(t *testing.T) {

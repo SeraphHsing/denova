@@ -91,9 +91,15 @@ func (c *Client) Check(ctx context.Context) (state external.ConnectionState, err
 	defer func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		if !c.closed {
-			c.state = state
+		if c.closed {
+			return
 		}
+		// A transient ACP discovery failure must not discard a runtime that was
+		// usable a moment ago. The explicit check still reports the error.
+		if state.Status == "unavailable" && c.state.Status == "ready" {
+			return
+		}
+		c.state = state
 	}()
 	ctx, cancel := context.WithTimeout(ctx, infrastructureTimeout)
 	defer cancel()

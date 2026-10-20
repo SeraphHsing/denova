@@ -12,6 +12,27 @@ Denova records major user-visible features, important compatibility or data chan
 
 ## [Unreleased]
 
+## [v0.6.4] - 2026-10-20
+
+### Brief / 简要说明
+
+#### 中文
+
+- 修复局域网设备登录后部分管理功能持续返回 403，以及运行时模型菜单反复探测引擎、模型列表要手动检查才出现的问题。
+
+#### English
+
+- Fixed persistent 403 responses for some management actions after LAN sign-in, and repeated engine probing in the runtime model menu that delayed model lists until a manual check.
+
+### Fixed / 修复
+
+- 修复手动上传安装包后重启安装失败（提示“更新程序未确认接手”）的问题：更新程序改为把输出写入本次更新的日志，不再继承可能已断开的终端输出管道。
+- 修复局域网设备登录后插件、游戏与扩展管理请求全部返回 403 的问题：管理接口改为按操作分级，只读查询与项目配置对已登录的局域网设备开放，启动运行时与安装扩展仍仅限本机，并在界面说明原因。
+- 修复对话输入框的运行时菜单每次打开都重新探测引擎、模型列表必须手动检查才出现，以及临时探测失败会把可用引擎显示为断开的问题；引擎状态与模型目录加入缓存，未知状态自动检查，Grok Build 现在沿用本机 `GROK_CONFIG_PATH` 配置，模型列表更完整。
+- Fixed manual package upgrades failing with "updater did not acknowledge handoff" by writing updater output to the update log instead of inheriting terminal output pipes that may already be closed.
+- Fixed every plugin, game, and extension management request returning 403 after LAN sign-in: management actions are classified per operation, so reads and Project configuration work from authenticated LAN devices while runtime starts and package installs stay host-only and explain the limit.
+- Fixed the conversation runtime menu re-probing engines on every open, model lists appearing only after a manual check, and transient probe failures marking a working engine as disconnected; engine state and model catalogs are cached, unknown states are checked automatically, and Grok Build now follows the host `GROK_CONFIG_PATH` configuration for a complete model list.
+
 ## [v0.6.3] - 2026-10-20
 
 ### Brief / 简要说明

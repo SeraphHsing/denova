@@ -81,16 +81,27 @@ func (c *Client) Status() external.ConnectionState {
 
 func (c *Client) Check(ctx context.Context) (state external.ConnectionState, err error) {
 	state = external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.connectionFailed"}
+	// Isolation failures are configuration state, not transient discovery noise.
+	transient := true
 	defer func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if c.closed {
 			state = external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.connectionLost"}
 			err = errors.New("Antigravity connection is closed")
+			c.state = state
+			return
+		}
+		// Catalog discovery is the only health probe. A transient CLI failure
+		// must not discard the last usable state; the explicit check still
+		// reports the error through its return value.
+		if transient && state.Status == "unavailable" && c.state.Status == "ready" {
+			return
 		}
 		c.state = state
 	}()
 	if err := checkAmbientHooks(); err != nil {
+		transient = false
 		return external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.antigravityIsolationUnsupported"}, err
 	}
 	_, err = c.Models(ctx)
