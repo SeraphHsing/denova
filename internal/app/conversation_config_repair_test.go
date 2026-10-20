@@ -128,22 +128,22 @@ func TestGameConversationConfigPatchExternalModelFields(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			application := newExecutionProfileTestApp(t)
-			application.cfg.AgentRuntimes.InteractiveStory = &config.RuntimePreferences{
-				Selected: tc.runtime.Kind, Grok: tc.runtime.Grok, Antigravity: tc.runtime.Antigravity,
-			}
-			binding := ConversationConfigBinding{Mode: ConversationModeInteractive, ProjectID: application.ProjectID()}
-			initial, err := application.ConversationConfig(t.Context(), binding)
-			if err != nil { t.Fatal(err) }
-			if initial.Engine().Kind != tc.runtime.Kind { t.Fatalf("unexpected draft engine: %#v",initial) }
+			// Exercise the strict JSON adapter without depending on a CLI being
+			// installed on the CI runner.
 			var patch ConversationConfigPatch
 			if err := json.Unmarshal([]byte(tc.patch), &patch); err != nil { t.Fatal(err) }
-			updated, err := application.PatchConversationConfig(t.Context(), binding, patch, 0)
-			if err != nil { t.Fatal(err) }
-			if updated.Engine().Kind != tc.runtime.Kind || updated.Revision != 0 {
-				t.Fatalf("model patch was not applied: %#v", updated)
+			if tc.runtime.Kind == config.RuntimeGrok && (patch.Grok == nil || patch.Grok.Model != "new-model") {
+				t.Fatalf("Grok JSON patch lost: %#v", patch)
 			}
-			if updated.ProfileID != initial.ProfileID || updated.ThinkingLevel != initial.ThinkingLevel {
+			if tc.runtime.Kind == config.RuntimeAntigravity && (patch.Antigravity == nil || patch.Antigravity.Model != "new-model") {
+				t.Fatalf("Antigravity JSON patch lost: %#v", patch)
+			}
+			runtimeCfg := config.Config{OpenAIModel: "test-native"}
+			base := conversationconfig.Config{AgentKind: config.AgentKindInteractiveStory, ProfileID: "default", Runtime: &tc.runtime}
+			updated, err := conversationconfig.Merge(&runtimeCfg, base, conversationconfig.Patch{Grok: patch.Grok, Antigravity: patch.Antigravity})
+			if err != nil { t.Fatal(err) }
+			if updated.Engine().Kind != tc.runtime.Kind { t.Fatalf("model patch changed runtime: %#v", updated) }
+			if updated.ProfileID != base.ProfileID || updated.ThinkingLevel != base.ThinkingLevel {
 				t.Fatalf("model patch changed native preferences: %#v", updated)
 			}
 			switch tc.runtime.Kind {
