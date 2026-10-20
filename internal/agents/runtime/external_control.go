@@ -308,6 +308,26 @@ func (control *ExternalController) Resume(ctx context.Context, action agentexecu
 	return run, nil
 }
 
+
+// ReleaseSuspendedGameForEngineSwitch relinquishes the old provider operation
+// without resolving the canonical player input or discarding its turn draft.
+// The new engine resumes that input under a fresh controller command.
+func (control *ExternalController) ReleaseSuspendedGameForEngineSwitch(ctx context.Context, commandID string) error {
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	state, err := control.read(ctx)
+	if err != nil { return err }
+	if control.active != nil || state.Phase != agentrun.RunPhaseSuspended ||
+		state.Current == nil || state.Current.Request.CommandID != commandID ||
+		len(state.Queue) != 0 || len(state.Current.Guidance) != 0 {
+		return ErrOperationActive
+	}
+	return control.update(ctx, func(current *externalControlState) error {
+		current.Phase, current.Current, current.Queue = agentrun.RunPhaseIdle, nil, nil
+		return current.setOutcome(string(current.CommandID), agentrun.OutcomeSuspended)
+	})
+}
+
 // Receipt reads the logical product task receipt, independently of the shorter
 // provider attempts that materialize its inputs and outputs.
 func (control *ExternalController) Receipt(ctx context.Context, commandID string) (agentrun.CommandReceipt, bool, error) {
