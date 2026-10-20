@@ -107,3 +107,60 @@ func TestGameConversationConfigCanRepairMissingModelProfile(t *testing.T) {
 		t.Fatalf("repaired model could not be applied: %v", err)
 	}
 }
+
+
+func TestGameConversationConfigPatchExternalModelFields(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		runtime config.RuntimeSelection
+		patch   ConversationConfigPatch
+		model   string
+	}{
+		{
+			name: "grok",
+			runtime: config.RuntimeSelection{Kind: config.RuntimeGrok, Grok: &config.GrokRuntimeSettings{Model: "old-model"}},
+			patch: ConversationConfigPatch{Grok: &config.GrokRuntimeSettings{Model: "new-model"}},
+			model: "new-model",
+		},
+		{
+			name: "antigravity",
+			runtime: config.RuntimeSelection{Kind: config.RuntimeAntigravity, Antigravity: &config.AntigravityRuntimeSettings{Model: "old-model"}},
+			patch: ConversationConfigPatch{Antigravity: &config.AntigravityRuntimeSettings{Model: "new-model"}},
+			model: "new-model",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			application := newExecutionProfileTestApp(t)
+			story, err := application.CreateInteractiveStory(interactive.CreateStoryRequest{Title: tc.name, StoryTellerID: "classic"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			binding := ConversationConfigBinding{Mode: ConversationModeInteractive, ProjectID: application.ProjectID(), StoryID: story.ID, BranchID: "main"}
+			initial, err := application.ConversationConfig(t.Context(), binding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			previous := initial.Config
+			previous.Runtime = &tc.runtime
+			saved, err := application.interactive.SetBranchRuntimeConfig(story.ID, "main", previous, initial.Revision)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Exercise the application adapter that formerly dropped these two fields.
+			updated, err := application.PatchConversationConfig(t.Context(), binding, tc.patch, saved.Revision)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if updated.Revision != saved.Revision+1 || updated.Engine().Model() != tc.model {
+				t.Fatalf("model patch was not persisted: %#v", updated)
+			}
+			if updated.ProfileID != previous.ProfileID || updated.ThinkingLevel != previous.ThinkingLevel {
+				t.Fatalf("model patch changed native preferences: %#v", updated)
+			}
+			snapshot, err := application.interactive.Snapshot(story.ID, "main")
+			if err != nil || snapshot.TurnCount != 0 || len(snapshot.PendingPlayerInputs) != 0 {
+				t.Fatalf("model patch mutated story history: %+v err=%v", snapshot, err)
+			}
+		})
+	}
+}
