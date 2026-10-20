@@ -230,7 +230,7 @@ func (a *App) PatchConversationConfig(ctx context.Context, binding ConversationC
 	if patch.CustomAgentID == nil && patch.ProfileID == nil && patch.ThinkingLevel == nil && patch.ApprovalMode == nil && patch.Runtime == nil && patch.Codex == nil && patch.Claude == nil && patch.Grok == nil && patch.Antigravity == nil {
 		return conversationconfig.Snapshot{}, errors.New("conversation config changes are empty")
 	}
-	if patch.ProfileID != nil || patch.ThinkingLevel != nil || patch.Runtime != nil {
+	if patch.ProfileID != nil || patch.ThinkingLevel != nil || patch.Runtime != nil || patch.Codex != nil || patch.Claude != nil || patch.Grok != nil || patch.Antigravity != nil {
 		a.conversationSelectionMu.Lock()
 		defer a.conversationSelectionMu.Unlock()
 	}
