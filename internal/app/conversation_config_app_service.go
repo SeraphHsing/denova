@@ -400,6 +400,9 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 		if task != nil && !task.Finished() {
 			return conversationconfig.Snapshot{}, ErrAgentOperationActive
 		}
+		if err := a.reconcileAbortedGameInputs(ctx, store, options); err != nil {
+			return conversationconfig.Snapshot{}, err
+		}
 		pending, err := interactiveapp.ExternalTurnInterruption(store, binding.StoryID, options.BranchID)
 		if err != nil {
 			return conversationconfig.Snapshot{}, err
