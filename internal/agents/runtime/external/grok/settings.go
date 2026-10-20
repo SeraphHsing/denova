@@ -41,7 +41,7 @@ func configPath(env []string) string {
 // commands, MCP servers and plugins never enter the private execution home.
 func modelConfiguration(env []string) ([]byte, bool, error) {
 	body, err := os.ReadFile(configPath(env))
-	if errors.Is(err, os.ErrNotExist) {
+	if errors.Is(err, os.ErrNotExist) && strings.TrimSpace(environmentValue(env, "GROK_CONFIG_PATH")) == "" {
 		return nil, false, nil
 	}
 	if err != nil {
@@ -83,9 +83,8 @@ func modelConfiguration(env []string) ([]byte, bool, error) {
 	}
 	if models, ok := source["models"].(map[string]any); ok {
 		selected := map[string]any{}
-		// allowed_models is deliberately not imported: it would confine the
-		// isolated runtime to a stale subset and hide newer engine models.
-		for _, name := range []string{"default", "default_reasoning_effort"} {
+		// Preserve explicit model restrictions together with routing defaults.
+		for _, name := range []string{"default", "default_reasoning_effort", "allowed_models"} {
 			if value, ok := models[name]; ok {
 				selected[name] = value
 			}

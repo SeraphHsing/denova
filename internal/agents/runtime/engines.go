@@ -202,6 +202,7 @@ func (engines *Engines) Check(ctx context.Context, id config.RuntimeID) (EngineD
 	}
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
+	entry.models, entry.modelsExpiry = external.Models{}, time.Time{}
 	// CLI login and configuration changes happen outside this process. An
 	// explicit idle check reloads them; accepted operations retain their lease.
 	if entry.connection != nil && entry.users == 0 {
@@ -213,7 +214,7 @@ func (engines *Engines) Check(ctx context.Context, id config.RuntimeID) (EngineD
 		return entry.descriptor(), nil
 	}
 	state, err := entry.connection.Check(ctx)
-	if err != nil && state.ReasonKey == "" {
+	if err != nil && state.Status != "ready" && state.ReasonKey == "" {
 		state = external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.connectionFailed"}
 	}
 	if key := VersionUnsupportedReasonKey(err); key != "" {
@@ -232,9 +233,6 @@ func (engines *Engines) Models(ctx context.Context, id config.RuntimeID) (extern
 	}
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
-	if len(entry.models.Items) > 0 && time.Now().Before(entry.modelsExpiry) {
-		return entry.models, nil
-	}
 	if err := entry.connect(ctx); err != nil {
 		return external.Models{}, err
 	}
@@ -251,6 +249,9 @@ func (engines *Engines) Models(ctx context.Context, id config.RuntimeID) (extern
 	}
 	if state.Status != "ready" {
 		return external.Models{}, ErrEngineNotReady
+	}
+	if time.Now().Before(entry.modelsExpiry) {
+		return entry.models, nil
 	}
 	models, err := entry.connection.Models(ctx)
 	if err != nil {
@@ -329,6 +330,7 @@ func (engines *Engines) Close() error {
 	for _, entry := range engines.entries {
 		entry.mu.Lock()
 		entry.closed = true
+		entry.models, entry.modelsExpiry = external.Models{}, time.Time{}
 		if entry.connection != nil {
 			if err := entry.connection.Close(); err != nil {
 				failures = append(failures, fmt.Errorf("close %s: %w", entry.id, err))
