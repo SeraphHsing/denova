@@ -174,6 +174,8 @@ func TestGameSwitchesNativeCodexClaudeNativeWithoutRewritingHistory(t *testing.T
 }
 
 func TestExternalGameResumesDraftAndKeepsFirstNarrativeAndDice(t *testing.T) {
+	for _, resumedKind := range []config.RuntimeID{config.RuntimeClaude, config.RuntimeGrok, config.RuntimeAntigravity} {
+		t.Run(string(resumedKind), func(t *testing.T) {
 	store, story, cfg := externalGameFixture(t)
 	cfg.ActiveAgentRuntime = &config.RuntimeSelection{Kind: config.RuntimeClaude, Claude: &config.ClaudeRuntimeSettings{Model: "test"}}
 	ruleArgs := `{"action":"Open the gate","intent":"Reach the path","challenge":"The gate is stuck","cost":"Making noise","state":"Standing by the gate","difficulty":"normal","outcomes":{"critical_success":{"result":"The gate opens"},"success":{"result":"The gate opens"},"failure":{"result":"The gate opens with noise"},"critical_failure":{"result":"The gate opens with loud noise"}}}`
@@ -200,6 +202,16 @@ func TestExternalGameResumesDraftAndKeepsFirstNarrativeAndDice(t *testing.T) {
 	if err != nil || interruption == nil {
 		t.Fatalf("interruption: %v", err)
 	}
+	// A resumed cycle may use a different CLI, but retains the same canonical
+	// command, draft, first narrative and accepted dice resolution.
+	switch resumedKind {
+	case config.RuntimeClaude:
+		cfg.ActiveAgentRuntime = &config.RuntimeSelection{Kind: config.RuntimeClaude, Claude: &config.ClaudeRuntimeSettings{Model: "test"}}
+	case config.RuntimeGrok:
+		cfg.ActiveAgentRuntime = &config.RuntimeSelection{Kind: config.RuntimeGrok, Grok: &config.GrokRuntimeSettings{Model: "test"}}
+	case config.RuntimeAntigravity:
+		cfg.ActiveAgentRuntime = &config.RuntimeSelection{Kind: config.RuntimeAntigravity, Antigravity: &config.AntigravityRuntimeSettings{Model: "test"}}
+	}
 	resumed := externalGameForTest(t, store, story, cfg, agentchat.ChatRequest{CommandID: "resume", ResumeInterruptionID: interruption.ID}, gameAdapterFunc(func(ctx context.Context, input external.Input, host external.Host) (external.Result, error) {
 		if !strings.Contains(input.Text, "The first narrative.") {
 			t.Fatal("resume lost locked prose")
@@ -215,6 +227,8 @@ func TestExternalGameResumesDraftAndKeepsFirstNarrativeAndDice(t *testing.T) {
 	snapshot, err := store.Snapshot(story, "main")
 	if err != nil || snapshot.TurnCount != 1 || snapshot.CurrentTurn.RuleResolution.ID != draft.RuleResolution.ID {
 		t.Fatalf("resume changed dice or turn count: %+v err=%v", snapshot.CurrentTurn, err)
+	}
+		})
 	}
 }
 
