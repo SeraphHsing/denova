@@ -349,3 +349,29 @@ func TestSuspendedGameEngineSwitchPreservesCanonicalCommand(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if outcome := newRun.Wait(t.Context()); outcome.Status != agentrun.OutcomeCompleted { t.Fatalf("new provider: %+v",outcome) }
 }
+
+func TestExternalRecoveryAbortWithoutProvider(t *testing.T) {
+	_, _, state, options, _ := controlFixture(t)
+	first := NewEngines()
+	defer first.Close()
+	control, err := first.ExternalControl(options, state)
+	if err != nil { t.Fatal(err) }
+	if _, err := control.Start(t.Context(), ExternalCycleInput{Request:agentchat.ChatRequest{CommandID:"lost",Message:"Continue"}},nil,nil); err != nil { t.Fatal(err) }
+	// Simulate a cold process after the controller accepted the input.
+	afterCrash := NewEngines()
+	defer afterCrash.Close()
+	cold, err := afterCrash.ExternalControl(options,state)
+	if err != nil { t.Fatal(err) }
+	status, err := cold.Status(t.Context())
+	if err != nil || status.Phase != agentrun.RunPhaseSuspended { t.Fatalf("cold status: %+v err=%v",status,err) }
+	var abort agentexecution.RuntimeRecoveryAction
+	for _, action := range agentexecution.RuntimeRecoveryActions(status) {
+		if action.Kind == agentexecution.RuntimeRecoveryAbort { abort = action; break }
+	}
+	if abort.Kind != agentexecution.RuntimeRecoveryAbort { t.Fatal("abort action unavailable") }
+	recovered, err := cold.Resume(t.Context(),abort,nil,nil)
+	if err != nil { t.Fatal(err) }
+	if outcome := recovered.Wait(t.Context()); outcome.Status != agentrun.OutcomeAborted { t.Fatalf("abort: %+v",outcome) }
+	status, err = cold.Status(t.Context())
+	if err != nil || status.Phase != agentrun.RunPhaseIdle { t.Fatalf("abort did not release controller: %+v err=%v",status,err) }
+}
