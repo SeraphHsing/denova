@@ -12,7 +12,10 @@ const settingsMocks = vi.hoisted(() => ({
   profiles: [] as { id: string; label: string; modelLabel: string }[],
 }))
 
-vi.mock('@/features/agent-runtime/api', () => ({ fetchEngineModels: settingsMocks.fetchEngineModels }))
+vi.mock('@/features/agent-runtime/api', async importOriginal => ({
+  ...await importOriginal<typeof import('@/features/agent-runtime/api')>(),
+  fetchEngineModels: settingsMocks.fetchEngineModels,
+}))
 vi.mock('@/features/agent-runtime/api-profiles', () => ({ useRuntimeProfiles: () => ({ profiles: settingsMocks.profiles, loaded: true, failed: false }) }))
 
 vi.mock('@/features/settings/api', () => ({
@@ -20,8 +23,8 @@ vi.mock('@/features/settings/api', () => ({
   fetchProjectSettings: settingsMocks.fetchProjectSettings,
 }))
 
-vi.mock('@/features/settings/query', () => ({
-  GLOBAL_SETTINGS_TARGET: 'global',
+vi.mock('@/features/settings/query', async importOriginal => ({
+  ...await importOriginal<typeof import('@/features/settings/query')>(),
   subscribeSettingsTarget: () => () => {},
 }))
 

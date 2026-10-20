@@ -83,3 +83,41 @@ func TestNativeModelDisplayOverrideDoesNotImplyAuthentication(t *testing.T) {
 		t.Fatal("display override was treated as configured API credentials")
 	}
 }
+
+func TestExplicitConfigurationPathPreservesModelRestrictions(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(t.TempDir(), "models.toml")
+	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte("[models]\ndefault = \"wrong\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body := "[models]\ndefault = \"chosen\"\nallowed_models = [\"chosen\"]\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{"GROK_HOME=" + home, "GROK_CONFIG_PATH=" + path}
+	encoded, _, err := modelConfiguration(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual struct {
+		Models struct {
+			Default string
+			Allowed []string `toml:"allowed_models"`
+		}
+	}
+	if err := toml.Unmarshal(encoded, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if actual.Models.Default != "chosen" || len(actual.Models.Allowed) != 1 || actual.Models.Allowed[0] != "chosen" {
+		t.Fatalf("explicit configuration changed: %+v", actual)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := modelConfiguration(env); err == nil {
+		t.Fatal("missing explicit configuration silently used defaults")
+	}
+	if _, _, err := modelConfiguration([]string{"GROK_HOME=" + t.TempDir()}); err != nil {
+		t.Fatalf("missing optional default configuration: %v", err)
+	}
+}

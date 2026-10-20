@@ -96,7 +96,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        # Pin the supported macOS image instead of following fleet migrations.
+        os: [windows-latest, macos-15, ubuntu-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
