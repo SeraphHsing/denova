@@ -15,6 +15,7 @@ const (
 	StoryEventTypePlayerInput                      = "player_input_accepted"
 	StoryEventTypeTurnDraft                        = "turn_draft"
 	StoryEventTypeTurnInterrupted                  = "turn_interrupted"
+	StoryEventTypeTurnAbandoned                    = "turn_abandoned"
 	StoryEventTypeModelContextBatch                = "model_context_batch"
 	StoryEventTypeModelContextProviderContinuation = "model_context_provider_continuation"
 	StoryEventTypeProviderContinuation             = "turn_provider_continuation"
@@ -46,6 +47,7 @@ var persistedStoryEventModelContextChanges = map[string]bool{
 	StoryEventTypePlayerInput:       true,
 	StoryEventTypeTurnDraft:         false,
 	StoryEventTypeTurnInterrupted:   true,
+	StoryEventTypeTurnAbandoned:     true,
 	StoryEventTypeModelContextBatch: true,
 	// The owning Turn or model-context batch already changes model context.
 	StoryEventTypeModelContextProviderContinuation: false,
@@ -215,6 +217,11 @@ func mapToStoryEventRecord(raw map[string]any) (StoryEventRecord, error) {
 		if err := validateTurnDraft(event.Draft); err != nil {
 			return StoryEventRecord{}, err
 		}
+	}
+	if envelope.Type == StoryEventTypeTurnAbandoned {
+		var event TurnAbandonedEvent
+		if err := mapToStruct(raw, &event); err != nil { return StoryEventRecord{}, err }
+		if err := validateTurnAbandonedEvent(event); err != nil { return StoryEventRecord{}, err }
 	}
 	if envelope.Type == StoryEventTypeTurnInterrupted {
 		var interruption TurnInterruptedEvent

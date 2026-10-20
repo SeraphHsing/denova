@@ -147,3 +147,60 @@ func deterministicTurnInterruptionID(playerInputID string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(playerInputID)))
 	return "turn-interruption-" + hex.EncodeToString(sum[:16])
 }
+
+ 
+// TurnAbandonedEvent settles one uncommitted input without altering the story head,
+// character state, narrative, or the preserved audit and draft records.
+type TurnAbandonedEvent struct {
+	V int `json:"v"`
+	Type string `json:"type"`
+	ID string `json:"id"`
+	ParentID string `json:"parent_id,omitempty"`
+	BranchID string `json:"branch_id"`
+	Ts string `json:"ts"`
+	PlayerInputID string `json:"player_input_id"`
+	Reason string `json:"reason"`
+}
+
+func validateTurnAbandonedEvent(event TurnAbandonedEvent) error {
+	if event.V != schemaVersion || event.Type != StoryEventTypeTurnAbandoned ||
+		event.ID != "turn-abandoned-"+event.PlayerInputID ||
+		strings.TrimSpace(event.PlayerInputID) == "" ||
+		strings.TrimSpace(event.BranchID) == "" ||
+		strings.TrimSpace(event.Reason) == "" ||
+		strings.TrimSpace(event.Ts) == "" {
+		return fmt.Errorf("invalid turn abandonment")
+	}
+	return nil
+}
+
+// AbandonPendingPlayerInput is idempotent and must be called only after the
+// matching runtime operation has fully settled; never on transient disconnects.
+func (s *Store) AbandonPendingPlayerInput(storyID, branchID, playerInputID string) (bool, error) {
+	if s == nil { return false, fmt.Errorf("interactive store is nil") }
+	storyID, branchID, playerInputID = strings.TrimSpace(storyID), strings.TrimSpace(branchID), strings.TrimSpace(playerInputID)
+	if storyID == "" || branchID == "" || playerInputID == "" { return false, fmt.Errorf("story, branch and input are required") }
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	release, err := s.acquireStoryMutationLeaseLocked(storyID)
+	if err != nil { return false, err }
+	defer release()
+	meta, _, err := s.readStoryRecentLocked(storyID, branchID)
+	if err != nil { return false, err }
+	branchMeta, ok := meta.Branches[branchID]
+	if !ok { return false, fmt.Errorf("branch does not exist: %s", branchID) }
+	projection, err := s.storyBranchProjectionLocked(storyID, branchID)
+	if err != nil { return false, err }
+	if !projection.hasPendingPlayerInput(playerInputID) { return false, nil }
+	event := TurnAbandonedEvent{
+		V: schemaVersion, Type: StoryEventTypeTurnAbandoned,
+		ID: "turn-abandoned-"+playerInputID, ParentID: branchMeta.Head,
+		BranchID: branchID, Ts: time.Now().UTC().Format(time.RFC3339Nano),
+		PlayerInputID: playerInputID, Reason: "user_requested",
+	}
+	if err := validateTurnAbandonedEvent(event); err != nil { return false, err }
+	meta.UpdatedAt = event.Ts
+	if err := s.appendStoryTransactionLocked(storyID, meta, event); err != nil { return false, err }
+	s.syncStoryIndexProjectionLocked(storyID)
+	return true, nil
+}

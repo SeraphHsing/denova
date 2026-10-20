@@ -225,7 +225,7 @@ func (projection *storyJournalProjection) applyEvent(cursor conversationjournal.
 			}
 		case StoryEventTypeTurnPresentationRevised, StoryEventTypeTurnBackgroundRevised, StoryEventTypeStateDelta, StoryEventTypeTurnInterrupted, StoryEventTypeTurnStateRevised, StoryEventTypeStoryConfigUpdated, StoryEventTypeBranchPlanRevised:
 			// These affect next-turn preparation, not canonical raw messages.
-		case StoryEventTypeBranch, StoryEventTypeBranchHeadMoved, StoryEventTypeTurnVersionSelected, StoryEventTypeTurnNarrativeRevised:
+		case StoryEventTypeBranch, StoryEventTypeBranchHeadMoved, StoryEventTypeTurnVersionSelected, StoryEventTypeTurnNarrativeRevised, StoryEventTypeTurnAbandoned:
 			branch.HistoryEpoch, branch.HistoryRevision = record.Envelope.ID, record.Envelope.ID
 		default:
 			return fmt.Errorf("canonical history does not handle model context event %q", record.Envelope.Type)
@@ -292,6 +292,12 @@ func (projection *storyJournalProjection) applyEvent(cursor conversationjournal.
 		}
 		branch.rememberPendingPlayerInput(event.ID)
 		projection.rememberCommit(cursor, StoryEventTypePlayerInput, event.ID, event.BranchID, event.AgentCommandID, event.AgentOperationID, event.AgentCycle, event.AgentCommitHash)
+	case StoryEventTypeTurnAbandoned:
+		var event TurnAbandonedEvent
+		if err := mapToStruct(record.Raw, &event); err != nil { return err }
+		if !branch.hasPendingPlayerInput(event.PlayerInputID) { return fmt.Errorf("cannot abandon settled player input %s", event.PlayerInputID) }
+		branch.consumePlayerInputs(event.PlayerInputID, nil)
+		if branch.PendingInterruption != nil && branch.PendingInterruption.PlayerInputID == event.PlayerInputID { branch.PendingInterruption = nil }
 	case StoryEventTypeTurnInterrupted:
 		var event TurnInterruptedEvent
 		if err := mapToStruct(record.Raw, &event); err != nil {
