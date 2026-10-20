@@ -176,6 +176,12 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, reques
 		usageRun := a.Analytics().BeginRun(analytics.Game, analyticsEngine(cycle.runtimeCfg), analytics.User)
 		slog.InfoContext(ctx, fmt.Sprintf("[interactive-agent-task] run begin id=%s command_id=%s story_id=%s branch_id=%s rewind_turn_id=%s message_len=%d style_scenes=%d", task.ID(), identity.request.CommandID, cycle.storyID, cycle.branchID, identity.request.RegenerateFromTurnID, len(identity.request.Message), len(identity.request.StyleScenes)))
 		outcome := accepted.Wait(ctx)
+		if outcome.Status == agentrun.OutcomeAborted && cycle.externalAssembly != nil {
+			if err := settleAbortedGameInput(cycle.store, cycle.storyID, cycle.branchID, identity.request.CommandID); err != nil {
+				slog.ErrorContext(ctx, "[interactive-agent-task] cannot settle aborted game input", "story_id", cycle.storyID, "branch_id", cycle.branchID, "error", err)
+				task.Emit(agentrun.Event{Type: "error", Data: map[string]any{"error_key": "agentRuntime.operationFailed", "details": map[string]any{"detail": err.Error()}}})
+			}
+		}
 		finishAnalyticsRun(usageRun, outcome.Status)
 		slog.InfoContext(ctx, fmt.Sprintf("[interactive-agent-task] run end id=%s command_id=%s outcome=%s status=%s", task.ID(), identity.request.CommandID, outcome.Status, task.Status()))
 	}
