@@ -290,6 +290,9 @@ func TestGrokACPProcess(t *testing.T) {
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		os.Exit(7)
+	}
 	os.Exit(0)
 }
 
