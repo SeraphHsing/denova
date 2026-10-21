@@ -10,6 +10,29 @@ Denova records major user-visible features, important compatibility or data chan
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)。
 
+## [v0.6.6] - 2026-10-21
+
+### Brief / 简要说明
+
+#### 中文
+
+- 修复选择推理强度后 Grok Build 无法执行，以及 Antigravity CLI 因内置审批工具被误判为越权工具而整轮失败；执行失败时现在会说明是哪一步调用出错及其具体原因。
+
+#### English
+
+- Fixed Grok Build turns failing after a reasoning effort was selected and Antigravity CLI attempts aborted by its built-in approval tool; failures now name the rejected call and its provider reason.
+
+### Fixed / 修复
+
+- 修复在 Grok Build 上选择推理强度后每次执行都以 `Invalid params` 失败的问题：推理强度改为按会话配置项以标量值下发。
+- 修复 Antigravity CLI 把内置审批工具当作越权工具、导致整轮执行失败的问题：只有真正超出范围的工具才会被拒绝。
+- 修复 Claude Code 新增原生工具时整轮执行失败的问题：范围外的原生工具不再中断回合，其调用仍由权限策略拒绝。
+- 修复执行失败只显示 `Invalid params` 这类笼统原因的问题：错误信息现在包含失败的调用与提供方详细原因。
+- Fixed every Grok Build turn failing with `Invalid params` once a reasoning effort was selected: the effort is now sent as the scalar session config value the CLI accepts.
+- Fixed Antigravity CLI attempts aborting because its built-in approval tool was treated as an out-of-scope tool; only genuinely unscoped tools are refused.
+- Fixed Claude Code turns aborting when the CLI adds a native tool: out-of-scope native tools no longer interrupt the turn, and the permission policy still denies their execution.
+- Fixed execution failures reporting only generic reasons such as `Invalid params`; errors now name the rejected call and its provider detail.
+
 ## [v0.6.5] - 2026-10-21
 
 ### Brief / 简要说明
