@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	agentrun "denova/internal/agents/run"
 	"denova/internal/agents/runtime/external"
@@ -47,6 +48,13 @@ type streamFrame struct {
 	} `json:"result"`
 }
 
+// The CLI advertises its native approval prompts (ask_permission and, in newer
+// builds, ask_custom_permission) in init even when the agent frontmatter scopes
+// the agent to product tools. They only answer a permission request and cannot
+// reach product effects, so they are tolerated; any other unscoped tool means
+// the isolation switches failed and the attempt must be refused.
+func isApprovalPrompt(name string) bool { return strings.HasPrefix(name, "ask_") }
+
 type streamOutput struct {
 	initialized bool
 	terminal    bool
@@ -69,7 +77,7 @@ func (s *streamOutput) feed(line []byte, host external.Host) error {
 			return errors.New("invalid Antigravity initialization")
 		}
 		for _, tool := range frame.Init.Tools {
-			if !s.allowed[tool] {
+			if !s.allowed[tool] && !isApprovalPrompt(tool) {
 				return fmt.Errorf("Antigravity exposed an unscoped tool %q", tool)
 			}
 		}

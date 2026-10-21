@@ -249,6 +249,17 @@ func TestGrokACPProcess(t *testing.T) {
 			sessionID = f.ID
 			reverse("mcp-discover", 0, "server/discover", map[string]any{})
 		case "session/set_config_option":
+			// Grok rejects a non-scalar config value with -32602.
+			var params struct {
+				SessionID string `json:"sessionId"`
+				ConfigID  string `json:"configId"`
+				Value     any    `json:"value"`
+			}
+			_ = json.Unmarshal(f.Params, &params)
+			if params.SessionID != "session-1" || params.ConfigID != "reasoning_effort" || params.Value != "high" {
+				write(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{"code": -32602, "message": "Invalid params", "data": "data did not match any variant of untagged enum SessionConfigOptionValue"}})
+				continue
+			}
 			response(f.ID, map[string]any{"configOptions": []any{}})
 		case "session/prompt":
 			if mode == "resume" && strings.Contains(string(f.Params), "old request") {

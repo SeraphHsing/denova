@@ -118,6 +118,20 @@ func TestRunCancellationPreservesPartialResponse(t *testing.T) {
 	}
 }
 
+// Native approval prompts stay advertised regardless of the scoped agent, so a
+// scoped turn must run with them instead of failing the whole attempt.
+func TestRunToleratesNativeApprovalPrompts(t *testing.T) {
+	client := fixtureClient(t, "approval")
+	host := &testHost{}
+	result, err := client.Run(t.Context(), fixtureInput(t), host)
+	if err != nil || !result.Settled || result.Text != "Task completed." {
+		t.Fatalf("approval result: %#v %v", result, err)
+	}
+	if len(host.calls) != 1 || host.calls[0].Name != "record" {
+		t.Fatalf("host calls: %#v", host.calls)
+	}
+}
+
 func TestRunRejectsUnsafeToolsBeforeHostEffects(t *testing.T) {
 	client := fixtureClient(t, "unsafe")
 	host := &testHost{}
@@ -263,10 +277,12 @@ func TestAntigravityFixtureProcess(t *testing.T) {
 		panic("unexpected product tool configuration")
 	} else if mode == "unsafe" {
 		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":["call_mcp_tool","run_command"]}}`)
+	} else if mode == "approval" {
+		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":["ask_custom_permission","call_mcp_tool"]}}`)
 	} else {
 		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":["call_mcp_tool"]}}`)
 	}
-	if mode == "tool" || mode == "unsafe" || mode == "concurrent" {
+	if mode == "tool" || mode == "unsafe" || mode == "concurrent" || mode == "approval" {
 		server := agent.MCPServers[0]
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()

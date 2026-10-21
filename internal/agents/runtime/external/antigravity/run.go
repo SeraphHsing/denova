@@ -113,7 +113,9 @@ func (c *Client) Run(ctx context.Context, input external.Input, host external.Ho
 	}
 	args = append(args, "--model", settings.Model)
 	if settings.Effort != "" {
-		args = append(args, "--effort", settings.Effort)
+		// Antigravity encodes reasoning strength in the model slug and its
+		// catalog advertises no separate effort switch, so no such flag is sent.
+		slog.WarnContext(ctx, "[external-runtime] ignoring Antigravity effort; strength belongs to the model slug", "effort", settings.Effort)
 	}
 	cmd := c.command(runCtx, args...)
 	cmd.Dir = dir

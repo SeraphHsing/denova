@@ -131,8 +131,11 @@ func (c *Client) Run(ctx context.Context, input external.Input, host external.Ho
 	}
 	result.SessionID = p.session
 	if settings.Effort != "" {
+		// ACP config option values are scalars. Grok rejects an object wrapper
+		// with -32602 Invalid params (SessionConfigOptionValue must match a
+		// string variant), so the effort level is sent bare.
 		startup, cancel := context.WithTimeout(ctx, infrastructureTimeout)
-		err = p.call(startup, "session/set_config_option", map[string]any{"sessionId": p.session, "configId": "reasoning_effort", "value": map[string]string{"value": settings.Effort}}, nil, state.handle)
+		err = p.call(startup, "session/set_config_option", map[string]any{"sessionId": p.session, "configId": "reasoning_effort", "value": settings.Effort}, nil, state.handle)
 		cancel()
 		if err != nil {
 			return result, err

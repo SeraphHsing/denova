@@ -2,6 +2,7 @@ package grok
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,7 +22,27 @@ type rpcError struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-func (e *rpcError) Error() string { return fmt.Sprintf("Grok ACP error %d: %s", e.Code, e.Message) }
+func (e *rpcError) Error() string {
+	if detail := e.detail(); detail != "" {
+		return fmt.Sprintf("Grok ACP error %d: %s: %s", e.Code, e.Message, detail)
+	}
+	return fmt.Sprintf("Grok ACP error %d: %s", e.Code, e.Message)
+}
+
+// Grok puts the actionable cause in error data, which may be a plain string or
+// a structured object. Diagnostic text keeps the bare message from hiding it.
+func (e *rpcError) detail() string {
+	raw := bytes.TrimSpace(e.Data)
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return text
+	}
+	return string(raw)
+}
+
 func (e *rpcError) dataCode() string {
 	var data struct {
 		Code string `json:"code"`
@@ -238,7 +259,9 @@ func (p *process) call(ctx context.Context, method string, params, output any, h
 			return errors.New("Grok returned an unexpected response identity")
 		}
 		if f.Error != nil {
-			return f.Error
+			// Several RPCs share one connection, so name the rejected call; the
+			// provider message alone does not say which request was invalid.
+			return fmt.Errorf("Grok %s: %w", method, f.Error)
 		}
 		if len(f.Result) == 0 {
 			return errors.New("Grok omitted its ACP result")
