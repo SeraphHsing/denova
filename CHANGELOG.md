@@ -10,7 +10,17 @@ Denova records major user-visible features, important compatibility or data chan
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)。
 
-## [Unreleased]
+## [v0.6.5] - 2026-10-21
+
+### Brief / 简要说明
+
+#### 中文
+
+- 修复游戏 Agent 断连或手动中止后残留的 Pending 回合导致后续无法继续，以及 Grok Build / Antigravity CLI 模型配置保存失败；暂停的回合可以在其他 CLI 上继续原草稿、骰子结果和已确认剧情，或明确放弃。
+
+#### English
+
+- Fixed stuck Game turns after a disconnect or manual abort and missing Grok Build / Antigravity CLI model settings; a suspended turn can resume on another CLI with the original draft, dice results and committed history preserved, or be explicitly discarded.
 
 ### Fixed / 修复
 
