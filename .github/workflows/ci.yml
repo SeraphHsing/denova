@@ -80,8 +80,21 @@ jobs:
       - name: Test and vet
         working-directory: ${{ matrix.module }}
         run: |
-          go test ./...
-          go vet ./...
+          set -o pipefail
+          # Surface failures as check annotations so a red run explains itself
+          # without requiring log access.
+          if ! go test ./... 2>&1 | tee go-test.log; then
+            grep -E '^(--- FAIL:|FAIL|panic:|# )' go-test.log | head -n 20 | while IFS= read -r line; do
+              echo "::error title=go test (${{ matrix.module }})::$line"
+            done
+            exit 1
+          fi
+          if ! go vet ./... 2>&1 | tee go-vet.log; then
+            grep -v '^#' go-vet.log | head -n 10 | while IFS= read -r line; do
+              echo "::error title=go vet (${{ matrix.module }})::$line"
+            done
+            exit 1
+          fi
       - name: Test installer and packaging
         if: matrix.module == '.'
         run: |
