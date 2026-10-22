@@ -14,6 +14,8 @@ import (
 	"sync"
 
 	"denova/internal/agents/runtime/external"
+
+	agentschema "github.com/alfredxw/denova/agent/schema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -104,10 +106,15 @@ func startBridge(ctx context.Context, tools []external.Tool, host external.Host,
 			if err != nil {
 				return nil, err
 			}
-			if len(value.Images) != 0 {
-				return nil, errors.New("Antigravity CLI text protocol does not support image tool results")
+			result = &mcp.CallToolResult{IsError: !value.Success, Content: []mcp.Content{&mcp.TextContent{Text: value.Text}}}
+			for _, attachment := range value.Images {
+				data, err := agentschema.ReadAttachmentImage(attachment)
+				if err != nil {
+					return nil, err
+				}
+				result.Content = append(result.Content, &mcp.ImageContent{Data: data, MIMEType: attachment.MediaType})
 			}
-			return &mcp.CallToolResult{IsError: !value.Success, Content: []mcp.Content{&mcp.TextContent{Text: value.Text}}}, nil
+			return result, nil
 		})
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

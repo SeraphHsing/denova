@@ -52,9 +52,15 @@ func engineDescriptor(id config.RuntimeID) EngineDescriptor {
 	case config.RuntimeCodex, config.RuntimeClaude:
 		item.NameKey, item.Status = "agentRuntime."+string(id), "unchecked"
 		item.Capabilities = EngineCapabilities{AskUser: true, Cancel: true, Goal: true, Queue: true, Steer: true, Pause: true}
-	case config.RuntimeGrok, config.RuntimeAntigravity:
+	case config.RuntimeGrok:
 		item.NameKey, item.Status = "agentRuntime."+string(id), "unchecked"
-		// Goal requires an isolated evaluation fork, which these adapters do not expose.
+		// A single-turn headless process can be cancelled and queued, but not
+		// steered or paused: there is no live channel into the running turn.
+		// Goal requires an isolated evaluation fork this adapter does not expose.
+		item.Capabilities = EngineCapabilities{AskUser: true, Cancel: true, Queue: true}
+	case config.RuntimeAntigravity:
+		item.NameKey, item.Status = "agentRuntime."+string(id), "unchecked"
+		// Goal requires an isolated evaluation fork, which this adapter does not expose.
 		item.Capabilities = EngineCapabilities{AskUser: true, Cancel: true, Queue: true, Steer: true, Pause: true}
 	}
 	item.ConfigurationSections = EngineConfigurationSections(id)

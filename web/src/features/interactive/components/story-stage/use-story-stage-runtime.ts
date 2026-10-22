@@ -543,6 +543,10 @@ export function useStoryStageRuntime({
         rewindTurnId: rewindTurnId || undefined,
         retryMessage: message,
       })
+    } else if (modelOnly) {
+      // An opening has no user message to display, but a retried opening must
+      // still replace the abandoned attempt instead of appending to it.
+      liveAccumulator.resetForCheckpoint()
     }
     liveAccumulator.beginStage(stageKey)
     updateStageRun((current) => ({

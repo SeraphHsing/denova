@@ -1,22 +1,43 @@
 package grok
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
-	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"denova/config"
 	agentrun "denova/internal/agents/run"
 	"denova/internal/agents/runtime/external"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/pelletier/go-toml/v2"
 )
+
+type recordingHost struct {
+	calls  []external.ToolCall
+	events []agentrun.Event
+}
+
+func (h *recordingHost) Emit(event agentrun.Event) error {
+	h.events = append(h.events, event)
+	return nil
+}
+
+func (h *recordingHost) CallTool(_ context.Context, call external.ToolCall) (external.ToolResult, error) {
+	if call.Name != "save" {
+		return external.ToolResult{}, errors.New("unexpected host tool")
+	}
+	h.calls = append(h.calls, call)
+	return external.ToolResult{Text: "Committed product outcome", Success: true}, nil
+}
 
 func fixtureClient(t *testing.T, mode string) *Client {
 	t.Helper()
@@ -24,318 +45,259 @@ func fixtureClient(t *testing.T, mode string) *Client {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := &Client{options: ProcessOptions{Executable: executable, Args: []string{"-test.run=^TestGrokACPProcess$", "--"}}, env: append(os.Environ(), "DENOVA_GROK_HELPER=1", "DENOVA_GROK_MODE="+mode), active: map[*process]struct{}{}}
-	t.Cleanup(func() { _ = c.Close() })
-	return c
+	client, err := Connect(t.Context(), ProcessOptions{Executable: executable, Args: []string{"-test.run=TestGrokHeadlessFixture", "--", "--fixture-mode=" + mode}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	return client
 }
 
-type recordingHost struct {
-	mu      sync.Mutex
-	calls   []external.ToolCall
-	events  []agentrun.Event
-	started chan struct{}
-	wait    bool
-}
-
-func (h *recordingHost) Emit(event agentrun.Event) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.events = append(h.events, event)
-	return nil
-}
-func (h *recordingHost) CallTool(ctx context.Context, call external.ToolCall) (external.ToolResult, error) {
-	h.mu.Lock()
-	h.calls = append(h.calls, call)
-	h.mu.Unlock()
-	if h.started != nil {
-		close(h.started)
-	}
-	if h.wait {
-		<-ctx.Done()
-		return external.ToolResult{}, ctx.Err()
-	}
-	return external.ToolResult{Text: "Saved", Success: true}, nil
-}
 func fixtureInput(t *testing.T) external.Input {
-	return external.Input{Selection: config.RuntimeSelection{Kind: config.RuntimeGrok, Grok: &config.GrokRuntimeSettings{Model: "grok-test", Effort: "high"}}, Directory: t.TempDir(), Instructions: "Write the requested story.", Text: "Save the story", Tools: []external.Tool{{Name: "save", Description: "Save a story", Schema: json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}}}`)}}}
+	t.Helper()
+	return external.Input{
+		Selection:    config.RuntimeSelection{Kind: config.RuntimeGrok, Grok: &config.GrokRuntimeSettings{Model: "grok-fixture", ContextWindow: 500000}},
+		Instructions: "Reply briefly.",
+		Text:         "Save the story.",
+		Tools:        []external.Tool{{Name: "save", Description: "Save the story", Schema: json.RawMessage(`{"type":"object"}`)}},
+		Directory:    t.TempDir(),
+	}
 }
 
-func TestRunRoutesReverseMCPAndSettlesAfterHost(t *testing.T) {
-	c := fixtureClient(t, "turn")
+func TestHeadlessTurnSettlesWithPlanAndUsage(t *testing.T) {
 	host := &recordingHost{}
-	result, err := c.Run(context.Background(), fixtureInput(t), host)
-	if err != nil {
-		t.Fatal(err)
+	result, err := fixtureClient(t, "ok").Run(t.Context(), fixtureInput(t), host)
+	if err != nil || !result.Settled {
+		t.Fatalf("turn result: %+v %v", result, err)
 	}
-	if result.Text != "Story saved." || result.SessionID != "session-1" || !result.Settled || result.Plan == nil || len(result.Plan.Items) != 1 || string(result.Plan.Items[0].Status) != "completed" {
-		t.Fatalf("unexpected result: %+v", result)
+	if result.Text != "Story saved." || result.SessionID != "session-1" {
+		t.Fatalf("turn payload: %+v", result)
 	}
-	if len(host.calls) != 1 || host.calls[0].Name != "save" || string(host.calls[0].Arguments) != `{"text":"Story"}` {
-		t.Fatalf("replayed or incorrect tool call: %+v", host.calls)
+	if result.Plan == nil || len(result.Plan.Items) != 1 || result.Plan.Items[0].Status != "completed" {
+		t.Fatalf("plan: %#v", result.Plan)
 	}
-	for _, event := range host.events {
-		if strings.Contains(fmt.Sprint(event.Data), "PRIVATE") {
-			t.Fatal("private reasoning reached the product journal")
-		}
+	if result.Usage == nil || result.Usage.PromptTokens != 120 || result.Usage.CompletionTokens != 25 {
+		t.Fatalf("usage: %#v", result.Usage)
 	}
-}
-
-func TestModelsUseNativeCatalogAndEfforts(t *testing.T) {
-	models, err := fixtureClient(t, "models").Models(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(models.Items) != 1 || models.DefaultID != "grok-test" || models.Items[0].DisplayName != "Grok Test" || len(models.Items[0].Efforts) != 2 || models.Items[0].DefaultEffort != "high" {
-		t.Fatalf("unexpected catalog: %+v", models)
+	if len(host.events) < 2 {
+		t.Fatalf("streamed chunks were not emitted: %#v", host.events)
 	}
 }
 
-func TestResumeSkipsReplayAndMissingCacheIsRecoverable(t *testing.T) {
+// Product tools must reach Host over the private MCP server; a native tool call
+// mirror must never settle them.
+func TestHeadlessRoutesHostToolThroughMCP(t *testing.T) {
+	host := &recordingHost{}
+	result, err := fixtureClient(t, "tool").Run(t.Context(), fixtureInput(t), host)
+	if err != nil || !result.Settled {
+		t.Fatalf("tool result: %+v %v", result, err)
+	}
+	if len(host.calls) != 1 || host.calls[0].Name != "save" {
+		t.Fatalf("host calls: %#v", host.calls)
+	}
+	if !strings.Contains(string(host.calls[0].Arguments), "Story") {
+		t.Fatalf("tool arguments: %s", host.calls[0].Arguments)
+	}
+}
+
+// A resumed provider session already owns the prior turns: replaying the
+// canonical history would duplicate it on every turn.
+func TestHeadlessResumeSkipsHistoryReplay(t *testing.T) {
 	input := fixtureInput(t)
 	input.SessionID = "session-1"
-	input.History = []external.Message{{Role: "user", Text: "old request"}}
-	result, err := fixtureClient(t, "resume").Run(context.Background(), input, &recordingHost{})
-	if err != nil || result.Text != "Story saved." {
+	input.History = []external.Message{{Role: "user", Text: "Old context"}, {Role: "assistant", Text: "Old answer"}}
+	result, err := fixtureClient(t, "resume").Run(t.Context(), input, &recordingHost{})
+	if err != nil || !result.Settled || result.SessionID != "session-1" {
 		t.Fatalf("resume: %+v %v", result, err)
 	}
-	_, err = fixtureClient(t, "missing").Run(context.Background(), input, &recordingHost{})
-	if !errors.Is(err, external.ErrSessionUnavailable) {
-		t.Fatalf("missing cache was not recoverable: %v", err)
+}
+
+func TestHeadlessWithoutTerminalEventFails(t *testing.T) {
+	result, err := fixtureClient(t, "empty").Run(t.Context(), fixtureInput(t), &recordingHost{})
+	if err == nil || result.Settled {
+		t.Fatalf("missing terminal event accepted: %+v %v", result, err)
 	}
 }
 
-func TestCancellationReachesHostAndDoesNotSettle(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	host := &recordingHost{started: make(chan struct{}), wait: true}
-	done := make(chan error, 1)
-	go func() {
-		defer func() {
-			if value := recover(); value != nil {
-				done <- fmt.Errorf("run panicked: %v", value)
-			}
-		}()
-		result, err := fixtureClient(t, "turn").Run(ctx, fixtureInput(t), host)
-		if result.Settled {
-			err = errors.New("cancelled attempt settled")
+// A new event type is an observation, not a failure: the terminal `end` still
+// decides settlement, so a CLI upgrade cannot break every turn.
+func TestHeadlessIgnoresUnknownEvents(t *testing.T) {
+	result, err := fixtureClient(t, "unknown").Run(t.Context(), fixtureInput(t), &recordingHost{})
+	if err != nil || !result.Settled || result.Text != "Story saved." {
+		t.Fatalf("unknown event broke the turn: %+v %v", result, err)
+	}
+}
+
+func TestAttemptConfigCarriesContextWindowAndServer(t *testing.T) {
+	body, err := attemptConfig(nil, "grok-4.7", 500000, map[string]any{"url": "http://127.0.0.1:1/mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Model map[string]struct {
+			ContextWindow int `toml:"context_window"`
+		} `toml:"model"`
+		Servers map[string]struct {
+			URL string `toml:"url"`
+		} `toml:"mcp_servers"`
+		Permission struct {
+			Deny []string `toml:"deny"`
+		} `toml:"permission"`
+	}
+	if err := toml.Unmarshal(body, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Model["grok-4.7"].ContextWindow != 500000 {
+		t.Fatalf("context window: %#v", parsed.Model)
+	}
+	if parsed.Servers["denova"].URL != "http://127.0.0.1:1/mcp" {
+		t.Fatalf("mcp server: %#v", parsed.Servers)
+	}
+	if !slices.Contains(parsed.Permission.Deny, "Read(**)") {
+		t.Fatalf("isolation defaults: %#v", parsed.Permission)
+	}
+}
+
+// Zero keeps the model default instead of pinning a stale size.
+func TestAttemptConfigOmitsZeroContextWindow(t *testing.T) {
+	body, err := attemptConfig(nil, "grok-4.7", 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "context_window") {
+		t.Fatalf("zero context window was written:\n%s", body)
+	}
+}
+
+func TestDecodeModelsReadsCatalog(t *testing.T) {
+	catalog, err := decodeModels("You are not authenticated.\n\nDefault model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n  - grok-4.6\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.DefaultID != "grok-4.7" || len(catalog.Items) != 3 {
+		t.Fatalf("catalog: %#v", catalog)
+	}
+	if catalog.Items[1].ID != "grok-4.7-build-fast" {
+		t.Fatalf("catalog order: %#v", catalog.Items)
+	}
+}
+
+// TestGrokHeadlessFixture stands in for the installed CLI. It only runs when the
+// parent test passes --fixture-mode, so a normal test run skips it.
+func TestGrokHeadlessFixture(t *testing.T) {
+	mode := ""
+	version := false
+	for _, arg := range os.Args {
+		if arg == "--version" {
+			version = true
 		}
-		done <- err
-	}()
-	select {
-	case <-host.started:
-		cancel()
-	case <-time.After(2 * time.Second):
-		t.Fatal("host tool did not start")
-	}
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("cancel: %v", err)
+		if strings.HasPrefix(arg, "--fixture-mode=") {
+			mode = strings.TrimPrefix(arg, "--fixture-mode=")
 		}
-	case <-time.After(time.Second):
-		t.Fatal("cancel did not reach the host")
 	}
-}
-
-func TestProtocolFailuresCannotSettle(t *testing.T) {
-	for _, mode := range []string{"no-sdk", "bad-tool", "bad-stop"} {
-		t.Run(mode, func(t *testing.T) {
-			result, err := fixtureClient(t, mode).Run(context.Background(), fixtureInput(t), &recordingHost{})
-			if err == nil || result.Settled {
-				t.Fatalf("accepted invalid protocol result: %+v %v", result, err)
-			}
-			if mode == "no-sdk" && !errors.Is(err, ErrVersionUnsupported) {
-				t.Fatalf("missing protocol capability was not classified: %v", err)
-			}
-		})
+	if version {
+		fmt.Println("grok 1.0.62")
+		os.Exit(0)
 	}
-}
-
-func TestSteeringInterruptsWithoutConsumingQueuedInput(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	changed := make(chan struct{}, 1)
-	interrupted := make(chan struct{}, 1)
-	ctx = external.WithSteering(ctx, &external.Steering{
-		Changed:   changed,
-		Next:      func(context.Context) (external.Guidance, bool, error) { return external.Guidance{}, true, nil },
-		Interrupt: func() { interrupted <- struct{}{}; cancel() },
-	})
-	client := fixtureClient(t, "turn")
-	input := fixtureInput(t)
-	host := &recordingHost{started: make(chan struct{}), wait: true}
-	done := make(chan error, 1)
-	go func() {
-		defer func() {
-			if value := recover(); value != nil {
-				done <- fmt.Errorf("steering run panicked: %v", value)
-			}
-		}()
-		_, err := client.Run(ctx, input, host)
-		done <- err
-	}()
-	select {
-	case <-host.started:
-		changed <- struct{}{}
-	case <-time.After(2 * time.Second):
-		t.Fatal("tool did not start")
+	if mode == "models" {
+		fmt.Println("Default model: grok-4.7")
+		fmt.Println("Available models:")
+		fmt.Println("  * grok-4.7 (default)")
+		fmt.Println("  - grok-4.7-build-fast")
+		os.Exit(0)
 	}
-	select {
-	case <-interrupted:
-	case <-time.After(time.Second):
-		t.Fatal("steering did not interrupt")
+	if mode == "signed-out" {
+		fmt.Fprintln(os.Stderr, "You are not authenticated.")
+		os.Exit(1)
 	}
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("steering failed: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("interrupted attempt did not stop")
-	}
-}
-
-// The helper is a subprocess protocol fixture, not an alternative adapter.
-func TestGrokACPProcess(t *testing.T) {
-	if os.Getenv("DENOVA_GROK_HELPER") != "1" {
+	if mode == "" {
 		return
 	}
-	mode := os.Getenv("DENOVA_GROK_MODE")
-	enc := json.NewEncoder(os.Stdout)
-	write := func(value any) {
-		if err := enc.Encode(value); err != nil {
-			os.Exit(2)
-		}
-	}
-	response := func(id json.RawMessage, result any) {
-		write(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
-	}
-	reverse := func(outer string, inner int, method string, params any) {
-		write(map[string]any{"jsonrpc": "2.0", "id": outer, "method": "_x.ai/mcp/sdk_call", "params": map[string]any{"serverId": "denova", "message": map[string]any{"jsonrpc": "2.0", "id": inner, "method": method, "params": params}}})
-	}
-	update := func(kind string, fields map[string]any) {
-		fields["sessionUpdate"] = kind
-		write(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "session-1", "update": fields}})
-	}
-	var sessionID, promptID json.RawMessage
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		var f frame
-		if json.Unmarshal(scanner.Bytes(), &f) != nil {
-			os.Exit(3)
-		}
-		switch f.Method {
-		case "initialize":
-			response(f.ID, map[string]any{"protocolVersion": 1, "_meta": map[string]any{"x.ai/mcp/sdk": mode != "no-sdk"}})
-		case "_x.ai/auth/info":
-			response(f.ID, map[string]string{"methodId": "xai_api_key"})
-		case "_x.ai/models/list":
-			response(f.ID, map[string]any{"result": map[string]any{"currentModelId": "grok-test", "availableModels": []any{map[string]any{"modelId": "grok-test", "name": "Grok Test", "_meta": map[string]any{"reasoningEffort": "high", "reasoningEfforts": []any{map[string]string{"value": "low"}, map[string]string{"value": "high"}}}}}}})
-		case "session/new", "session/load":
-			if mode == "missing" {
-				write(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{"code": -32603, "message": "Path not found.", "data": map[string]string{"code": "FS_NOT_FOUND"}}})
-				continue
-			}
-			var params map[string]any
-			_ = json.Unmarshal(f.Params, &params)
-			meta, _ := params["_meta"].(map[string]any)
-			profile, _ := meta["agentProfile"].(map[string]any)
-			if profile["injectDefaultTools"] != false || profile["agentsMd"] != false || len(params["mcpServers"].([]any)) != 0 {
-				os.Exit(4)
-			}
-			if f.Method == "session/load" {
-				update("agent_message_chunk", map[string]any{"content": map[string]string{"type": "text", "text": "OLD REPLAY"}})
-			}
-			sessionID = f.ID
-			reverse("mcp-discover", 0, "server/discover", map[string]any{})
-		case "session/set_config_option":
-			// Grok rejects a non-scalar config value with -32602.
-			var params struct {
-				SessionID string `json:"sessionId"`
-				ConfigID  string `json:"configId"`
-				Value     any    `json:"value"`
-			}
-			_ = json.Unmarshal(f.Params, &params)
-			if params.SessionID != "session-1" || params.ConfigID != "reasoning_effort" || params.Value != "high" {
-				write(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{"code": -32602, "message": "Invalid params", "data": "data did not match any variant of untagged enum SessionConfigOptionValue"}})
-				continue
-			}
-			response(f.ID, map[string]any{"configOptions": []any{}})
-		case "session/prompt":
-			if mode == "resume" && strings.Contains(string(f.Params), "old request") {
-				os.Exit(5)
-			}
-			promptID = f.ID
-			update("tool_call", map[string]any{"content": []any{}, "toolCallId": "tool-save", "title": "use_tool", "status": "in_progress"})
-			update("agent_thought_chunk", map[string]any{"content": map[string]string{"type": "text", "text": "PRIVATE"}})
-			tool := "save"
-			if mode == "bad-tool" {
-				tool = "unavailable"
-			}
-			reverse("mcp-call", 3, "tools/call", map[string]any{"name": tool, "arguments": map[string]string{"text": "Story"}})
-		case "session/cancel":
-			os.Exit(0)
-		case "":
-			switch string(f.ID) {
-			case `"mcp-discover"`:
-				var reply frame
-				_ = json.Unmarshal(f.Result, &reply)
-				if reply.Error == nil || reply.Error.Code != -32601 {
-					os.Exit(6)
-				}
-				reverse("mcp-init", 0, "initialize", map[string]string{"protocolVersion": "2024-11-05"})
-			case `"mcp-init"`:
-				reverse("mcp-list", 2, "tools/list", map[string]any{})
-			case `"mcp-list"`:
-				response(sessionID, map[string]string{"sessionId": "session-1"})
-			case `"mcp-call"`:
-				reverse("mcp-replay", 3, "tools/call", map[string]any{"name": "save", "arguments": map[string]string{"text": "Story"}})
-			case `"mcp-replay"`:
-				update("plan", map[string]any{"entries": []any{map[string]string{"content": "Save story", "status": "completed", "priority": "medium"}}})
-				update("agent_message_chunk", map[string]any{"content": map[string]string{"type": "text", "text": "Story saved."}})
-				stop := "end_turn"
-				if mode == "bad-stop" {
-					stop = "max_tokens"
-				}
-				response(promptID, map[string]string{"stopReason": stop})
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		os.Exit(7)
-	}
+	runFixture(mode)
 	os.Exit(0)
 }
 
-func TestInstalledGrokACP(t *testing.T) {
-	executable := os.Getenv("DENOVA_TEST_GROK")
-	if executable == "" {
-		t.Skip("set DENOVA_TEST_GROK to exercise an installed Grok Build binary")
+func runFixture(mode string) {
+	promptFile := ""
+	resumed := false
+	for index, arg := range os.Args {
+		if arg == "--prompt-file" && index+1 < len(os.Args) {
+			promptFile = os.Args[index+1]
+		}
+		if arg == "-r" && index+1 < len(os.Args) {
+			resumed = os.Args[index+1] != ""
+		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), infrastructureTimeout)
+	prompt, err := os.ReadFile(promptFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fixture could not read prompt:", err)
+		os.Exit(2)
+	}
+	if mode == "resume" {
+		if !resumed {
+			os.Exit(5)
+		}
+		if strings.Contains(string(prompt), "prior conversation") {
+			os.Exit(6)
+		}
+	}
+	emit := func(value any) {
+		body, _ := json.Marshal(value)
+		fmt.Println(string(body))
+	}
+	emit(map[string]any{"type": "available_commands", "tools": []string{"todo_write", "search_tool", "use_tool"}})
+	switch mode {
+	case "unknown":
+		emit(map[string]any{"type": "mystery"})
+		emit(map[string]any{"type": "thought", "data": "private"})
+	case "empty":
+		return
+	}
+	if mode == "tool" {
+		callHostTool()
+	}
+	emit(map[string]any{"type": "text", "data": "Story "})
+	emit(map[string]any{"type": "text", "data": "saved."})
+	emit(map[string]any{"type": "plan", "entries": []map[string]string{{"content": "Save story", "status": "completed", "priority": "medium"}}})
+	emit(map[string]any{"type": "usage", "usage": map[string]int{"input_tokens": 100, "output_tokens": 20, "cache_read_input_tokens": 40, "reasoning_tokens": 5}})
+	emit(map[string]any{"type": "end", "stopReason": "end_turn", "sessionId": "session-1", "usage": map[string]int{"input_tokens": 120, "output_tokens": 25, "cache_read_input_tokens": 40, "reasoning_tokens": 5, "total_tokens": 145}})
+}
+
+type bearerTransport struct{ token string }
+
+func (transport bearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	request.Header.Set("Authorization", transport.token)
+	return http.DefaultTransport.RoundTrip(request)
+}
+
+func callHostTool() {
+	body, err := os.ReadFile(filepath.Join(os.Getenv("GROK_HOME"), "config.toml"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fixture could not read config:", err)
+		os.Exit(3)
+	}
+	var parsed struct {
+		Servers map[string]struct {
+			URL     string            `toml:"url"`
+			Headers map[string]string `toml:"headers"`
+		} `toml:"mcp_servers"`
+	}
+	if err := toml.Unmarshal(body, &parsed); err != nil {
+		fmt.Fprintln(os.Stderr, "fixture could not parse config:", err)
+		os.Exit(4)
+	}
+	server := parsed.Servers["denova"]
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	client, err := Connect(ctx, ProcessOptions{Executable: executable})
+	client := mcp.NewClient(&mcp.Implementation{Name: "grok-fixture", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: server.URL, HTTPClient: &http.Client{Transport: bearerTransport{server.Headers["Authorization"]}}}, nil)
 	if err != nil {
-		t.Fatal(err)
+		fmt.Fprintln(os.Stderr, "fixture could not reach host tools:", err)
+		os.Exit(7)
 	}
-	defer client.Close()
-	models, err := client.Models(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(models.Items) == 0 {
-		t.Fatal("empty real Grok catalog")
-	}
-	t.Logf("Grok protocol %s returned %d models", client.Version(), len(models.Items))
-	state, err := client.Check(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.Status != "ready" && state.Status != "auth_required" {
-		t.Fatalf("unexpected authentication state: %+v", state)
-	}
-	_, err = exec.LookPath(executable)
-	if err != nil {
-		t.Fatal(err)
+	defer session.Close()
+	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "save", Arguments: map[string]any{"text": "Story"}}); err != nil {
+		fmt.Fprintln(os.Stderr, "fixture host tool failed:", err)
+		os.Exit(8)
 	}
 }

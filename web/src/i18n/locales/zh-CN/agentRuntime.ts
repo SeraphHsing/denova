@@ -1,6 +1,6 @@
 const agentRuntime = {
   'agentRuntime.configure': "配置",
-  'agentRuntime.checking': "正在检查可用性…",
+  'agentRuntime.checking': "正在载入运行时…",
   'agentRuntime.apiProfileHint': "使用 Denova 模型档案的 API 连接，无需 CLI 账号登录。采样和推理由所选引擎管理，档案中的温度、输出上限与上下文窗口设置不应用。",
   'agentRuntime.cliConnection': "CLI 账号状态",
   'agentRuntime.cliModels': "CLI 模型",
@@ -52,6 +52,8 @@ const agentRuntime = {
   'agentRuntime.chooseModel': "先检查连接，再选择模型",
   'agentRuntime.effort': "推理强度",
   'agentRuntime.defaultEffort': "使用模型默认值",
+  'agentRuntime.contextWindow': "上下文大小",
+  'agentRuntime.defaultContextWindow': "使用模型默认值",
   'agentRuntime.nativeInactive': "Native 的权限、上下文压缩、检查点指引和 Subagents 配置已保留，当前不生效。切回 Native 后恢复使用。",
   'agentRuntime.sharedInputBudget': "共用的上下文注入预算",
   'agentRuntime.policy.providedToolsWithoutApproval': "此引擎通过 Denova 提供的工具读写项目，不弹出逐次审批。提问正常等待你的回答。",

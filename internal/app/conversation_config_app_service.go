@@ -409,13 +409,21 @@ func (a *App) patchInteractiveConversationConfig(ctx context.Context, binding Co
 			// identity. Do not silently replay dice or state side effects.
 			return conversationconfig.Snapshot{}, fmt.Errorf("%w: finish or abandon the interrupted CLI turn before switching to Native", agentruntime.ErrOperationActive)
 		}
-		// Verify the destination before releasing the suspended source.
+		// Verify the destination before releasing the suspended source. A model or
+		// effort change inside the current engine validates against the cached
+		// catalog; only an engine switch has to pin a new connection.
 		if next.Engine().Kind != config.RuntimeNative {
-			_, release, err := a.AgentEngines().Acquire(ctx, next.Engine(), runtimeCfg)
-			if err != nil {
-				return conversationconfig.Snapshot{}, err
+			if next.Engine().Kind == current.Engine().Kind {
+				if err := a.AgentEngines().ValidateSelection(ctx, next.Engine()); err != nil {
+					return conversationconfig.Snapshot{}, err
+				}
+			} else {
+				_, release, err := a.AgentEngines().Acquire(ctx, next.Engine(), runtimeCfg)
+				if err != nil {
+					return conversationconfig.Snapshot{}, err
+				}
+				release()
 			}
-			release()
 		}
 		if err := runtime.ReleaseIdleForEngineSwitch(ctx, options); err != nil && !errors.Is(err, agentexecution.ErrRuntimeProjectionUnavailable) {
 			if errors.Is(err, agentschema.ErrSessionBusy) {

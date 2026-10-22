@@ -64,7 +64,7 @@ paths = ["plugin-path"]
 	if model.Model != "custom-id" || model.BaseURL != "http://127.0.0.1:1234/v1" || model.EnvKey != "TEST_MODEL_KEY" || model.Headers["X-Test"] != "header" || actual.Models.Default != "custom" {
 		t.Fatalf("routing changed: %+v", actual)
 	}
-	env := isolatedEnvironment([]string{"GROK_HOME=" + home, "GROK_AUTH_PATH=" + filepath.Join(home, "custom-auth.json"), "GROK_CONFIG=unscoped"}, "private-home")
+	env := isolatedEnv([]string{"GROK_HOME=" + home, "GROK_AUTH_PATH=" + filepath.Join(home, "custom-auth.json"), "GROK_CONFIG=unscoped"}, "private-home", "")
 	if environmentValue(env, "GROK_HOME") != "private-home" || environmentValue(env, "GROK_AUTH_PATH") != filepath.Join(home, "custom-auth.json") || environmentValue(env, "GROK_CONFIG") != "" {
 		t.Fatalf("private environment lost credential location or isolation: %v", env)
 	}

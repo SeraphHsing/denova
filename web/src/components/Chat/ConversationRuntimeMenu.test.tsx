@@ -7,7 +7,7 @@ import { ConversationRuntimeMenu } from './ConversationRuntimeMenu'
 
 const mocks = vi.hoisted(() => ({ fetchProjectSettings: vi.fn(), fetchSettings: vi.fn(), fetchModelCatalog: vi.fn(), fetchAgentEngines: vi.fn(), fetchEngineModels: vi.fn(), checkAgentEngine: vi.fn(), subscribeSettingsTarget: vi.fn() }))
 vi.mock('@/features/settings/api', () => mocks)
-vi.mock('@/features/agent-runtime/api', () => ({ ...mocks, AGENT_ENGINE_CHECKED_EVENT: 'denova:agent-engine-checked' }))
+vi.mock('@/features/agent-runtime/api', () => mocks)
 vi.mock('@/features/settings/query', async importOriginal => ({ ...await importOriginal<typeof import('@/features/settings/query')>(), subscribeSettingsTarget: mocks.subscribeSettingsTarget }))
 
 let user: ReturnType<typeof userEvent.setup>
@@ -26,7 +26,8 @@ function menu(config: ConversationConfigController, runActive = false) {
 }
 async function openRuntime() {
   await user.click(screen.getByRole('menuitem', { name: '运行时：Native' }))
-  await waitFor(() => expect(screen.queryByText('正在检查可用性…')).not.toBeInTheDocument())
+  // Native is always offered, so its row marks the resolved list.
+  await screen.findByRole('menuitem', { name: 'Native' })
 }
 
 beforeEach(() => {
@@ -84,18 +85,20 @@ describe('ConversationRuntimeMenu', () => {
     expect(screen.getAllByRole('menuitem', { name: '配置' }).every(item => item.getAttribute('aria-disabled') !== 'true')).toBe(true)
     expect(config.patch).not.toHaveBeenCalled()
   })
-  it('checks an unknown runtime automatically without automatically switching', async () => {
+  it('probes an unknown runtime only when the user selects it', async () => {
     mocks.fetchAgentEngines.mockResolvedValueOnce({ items: [{ id: 'codex', status: 'unchecked' }] })
     mocks.checkAgentEngine.mockResolvedValue({ id: 'codex', status: 'ready' })
     const config = controller()
     render(menu(config))
     await openRuntime()
-    await waitFor(() => expect(mocks.checkAgentEngine).toHaveBeenCalledWith('codex'))
-    expect(config.patch).not.toHaveBeenCalled()
-    const option = await screen.findByRole('menuitem', { name: 'Codex' })
-    await waitFor(() => expect(option).not.toHaveAttribute('aria-disabled', 'true'))
+    // Opening the list reads cached state; a probe would spawn a CLI process.
+    expect(mocks.checkAgentEngine).not.toHaveBeenCalled()
+    const option = screen.getByRole('menuitem', { name: 'Codex' })
+    expect(option).not.toHaveAttribute('aria-disabled', 'true')
     await user.click(option)
-    await waitFor(() => expect(config.patch).toHaveBeenCalledOnce())
+    await waitFor(() => expect(mocks.checkAgentEngine).toHaveBeenCalledWith('codex'))
+    // Checking an unknown engine never switches the bound conversation.
+    expect(config.patch).not.toHaveBeenCalled()
   })
   it('accepts a compatible API profile without CLI authentication', async () => {
     mocks.fetchProjectSettings.mockResolvedValue({ effective: {
@@ -161,39 +164,22 @@ describe('ConversationRuntimeMenu', () => {
       expect(config.snapshot?.runtime).toBeUndefined()
     })
   }
-  it('reuses choices when reopening without new probes', async () => {
+  it('never probes engines when the submenu opens or reopens', async () => {
+    mocks.fetchAgentEngines.mockResolvedValue({ items: [{ id: 'codex', status: 'unchecked' }] })
     render(menu(controller()))
     await openRuntime()
-    const reads = mocks.fetchEngineModels.mock.calls.length
     await user.keyboard('{ArrowLeft}')
     await openRuntime()
-    expect(mocks.fetchEngineModels).toHaveBeenCalledTimes(reads)
+    expect(mocks.checkAgentEngine).not.toHaveBeenCalled()
   })
 
-  it('observes an automatic check completed after closing the submenu', async () => {
-    let complete!: (value: unknown) => void
-    mocks.checkAgentEngine.mockReturnValue(new Promise(resolve => { complete = resolve }))
-    mocks.fetchAgentEngines.mockResolvedValueOnce({ items: [{ id: 'codex', status: 'unchecked' }] })
-    render(menu(controller()))
-    await openRuntime()
-    await waitFor(() => expect(mocks.checkAgentEngine).toHaveBeenCalled())
-    await user.keyboard('{ArrowLeft}')
-    await act(async () => { complete({ id: 'codex', status: 'ready' }) })
-    await openRuntime()
-    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Codex' })).not.toHaveAttribute('aria-disabled', 'true'))
-    expect(mocks.checkAgentEngine.mock.calls.filter(([id]) => id === 'codex')).toHaveLength(1)
-  })
-
-  it('refreshes choices after settings or an external engine check changes', async () => {
+  it('refreshes choices when remembered settings change', async () => {
     render(menu(controller()))
     await openRuntime()
     const reads = mocks.fetchAgentEngines.mock.calls.length
     const notify = mocks.subscribeSettingsTarget.mock.calls[0][1]
     act(() => notify({ effective: { openai_model: 'changed-model' } }))
     await waitFor(() => expect(mocks.fetchAgentEngines.mock.calls.length).toBeGreaterThan(reads))
-    const refreshed = mocks.fetchAgentEngines.mock.calls.length
-    act(() => window.dispatchEvent(new Event('denova:agent-engine-checked')))
-    await waitFor(() => expect(mocks.fetchAgentEngines.mock.calls.length).toBeGreaterThan(refreshed))
   })
 
 })

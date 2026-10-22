@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+	"log/slog"
 
 	agentrun "denova/internal/agents/run"
 	"denova/internal/agents/runtime/external"
@@ -48,13 +48,6 @@ type streamFrame struct {
 	} `json:"result"`
 }
 
-// The CLI advertises its native approval prompts (ask_permission and, in newer
-// builds, ask_custom_permission) in init even when the agent frontmatter scopes
-// the agent to product tools. They only answer a permission request and cannot
-// reach product effects, so they are tolerated; any other unscoped tool means
-// the isolation switches failed and the attempt must be refused.
-func isApprovalPrompt(name string) bool { return strings.HasPrefix(name, "ask_") }
-
 type streamOutput struct {
 	initialized bool
 	terminal    bool
@@ -76,10 +69,21 @@ func (s *streamOutput) feed(line []byte, host external.Host) error {
 		if s.initialized || frame.ConversationID == "" {
 			return errors.New("invalid Antigravity initialization")
 		}
+		// Verified on CLI 1.4.2: a scoped agent still receives the full native
+		// toolset in init (run_command, write_to_file, browser_*), because the
+		// frontmatter mounts components instead of filtering them. Provider tools
+		// are therefore an observation this adapter cannot refuse — --sandbox is
+		// what contains them — while product effects still reach the journal only
+		// through the host dispatcher. A scoped tool that is missing stays fatal:
+		// product tools would be unreachable.
+		var unscoped []string
 		for _, tool := range frame.Init.Tools {
-			if !s.allowed[tool] && !isApprovalPrompt(tool) {
-				return fmt.Errorf("Antigravity exposed an unscoped tool %q", tool)
+			if !s.allowed[tool] {
+				unscoped = append(unscoped, tool)
 			}
+		}
+		if len(unscoped) > 0 {
+			slog.Warn("Antigravity advertised tools outside the scoped catalog", "tools", unscoped)
 		}
 		for name := range s.allowed {
 			found := false

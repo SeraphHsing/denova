@@ -96,6 +96,10 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
   const speech = useStorySpeech({ owner: stageKey, story, snapshot: displaySnapshot, active })
   const [historyLoading, setHistoryLoading] = useState(false)
   const historyStageRef = useRef(stageKey)
+  // The persisted-turn callback runs from a stream started earlier, so it must
+  // read the live followLatest state instead of a render-closure snapshot.
+  const followLatestRef = useRef(historyWindow.followLatest)
+  followLatestRef.current = historyWindow.followLatest
   useEffect(() => {
     historyStageRef.current = stageKey
     setHistoryLoading(false)
@@ -141,9 +145,6 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
   useEffect(() => {
     setReplyEditTarget(null)
   }, [stageKey])
-  useEffect(() => {
-    if (streaming && !historyWindow.followLatest) resetHistoryToLatest()
-  }, [historyWindow.followLatest, resetHistoryToLatest, streaming])
   const previousSnapshotKeyRef = useRef(snapshotKey)
   const stagePreferences = useStagePreferences(projectId)
   const stageTextStyle = useMemo<CSSProperties>(
@@ -402,7 +403,11 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
     clearComposer: clearSubmittedComposer,
     onTurnPersisted: (event, options) => {
       speech.onPersisted(event, options)
-      return onTurnPersisted(event, options)
+      const applied = onTurnPersisted(event, options)
+      // While the reader is browsing earlier history, keep the settled turn in
+      // the live lane instead of clearing it; the frozen history window cannot
+      // project the persisted turn, and clearing would make the reply vanish.
+      return followLatestRef.current ? applied : undefined
     },
     onDone,
   })
@@ -522,6 +527,8 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
       : branchCreationSourceFromMessage(turnId, agentViewContent(view), t('branchTimeline.nodeFallback')))
   }
 
+  const committedTurnCount = Math.max(story?.turn_count || 0, snapshot?.turn_count || 0, snapshot?.turns?.length || 0)
+
   const regenerateView = (view: AgentMessageView) => {
     if (streaming) return
     const turnId = view.metadata.turn_id
@@ -533,7 +540,13 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
       }
       const liveUserMessage = [...liveMessages].reverse().find((item) => item.role === 'user')
       const source = stageRun.retryMessage || (liveUserMessage ? agentMessageDisplayText(liveUserMessage) : '')
-      if (source.trim()) void send({ message: source, rewindTurnId: stageRun.rewindTurnId })
+      if (!source.trim()) {
+        // A failed opening has no user input to replay and no committed turn to
+        // rewind, so retrying it means generating the opening again.
+        if (committedTurnCount === 0) void send({ startOpening: true })
+        return
+      }
+      void send({ message: source, rewindTurnId: stageRun.rewindTurnId })
       return
     }
     const source = turnsById.get(turnId)?.user || agentViewContent(view)
@@ -625,7 +638,6 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
   }
 
   const waitingToStartOpening = Boolean(pendingOpeningStoryId) && pendingOpeningStoryId === storyId
-  const committedTurnCount = Math.max(story?.turn_count || 0, snapshot?.turn_count || 0, snapshot?.turns?.length || 0)
   const openingRuntimeActive = streaming
     || Boolean(stageRun.runtime.operationId)
     || Boolean(stageRun.runtime.pendingInterruptionId)
@@ -745,6 +757,7 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
                   return result
                 }}
                 isStreaming={streaming}
+                followStreaming={false}
                 activityContent={stageRun.runtime.recoveryPaused ? t('storyStage.activity.recoveryPaused') : activityContent}
                 highlightDialogue
                 contentClassName="nova-story-reading-column"

@@ -25,6 +25,11 @@ import (
 const MinimumVersion = "1.4.2"
 const infrastructureTimeout = 15 * time.Second
 
+// catalogTimeout covers the `models` command, which resolves the catalog over
+// the network and needs 5-11s on a container behind a proxy. The control-plane
+// timeout killed it mid-flight and surfaced as a failed connection.
+const catalogTimeout = 40 * time.Second
+
 var ErrVersionUnsupported = errors.New("unsupported Antigravity CLI version")
 var errAuthenticationRequired = errors.New("Antigravity authentication required")
 
@@ -79,7 +84,15 @@ func (c *Client) Status() external.ConnectionState {
 	return c.state
 }
 
-func (c *Client) Check(ctx context.Context) (state external.ConnectionState, err error) {
+func (c *Client) Check(ctx context.Context) (external.ConnectionState, error) {
+	state, _, err := c.Probe(ctx)
+	return state, err
+}
+
+// Probe answers readiness and the catalog from the same `models` invocation. The
+// CLI exposes no separate account handshake, so probing twice would spawn the
+// process twice for one answer.
+func (c *Client) Probe(ctx context.Context) (state external.ConnectionState, models external.Models, err error) {
 	state = external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.connectionFailed"}
 	defer func() {
 		c.mu.Lock()
@@ -87,6 +100,7 @@ func (c *Client) Check(ctx context.Context) (state external.ConnectionState, err
 		if c.closed {
 			state = external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.connectionLost"}
 			err = errors.New("Antigravity connection is closed")
+			models = external.Models{}
 			c.state = state
 			return
 		}
@@ -95,21 +109,22 @@ func (c *Client) Check(ctx context.Context) (state external.ConnectionState, err
 		if state.Status == "unavailable" && c.state.Status == "ready" &&
 			(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
 			state = c.state
+			models = external.Models{}
 			return
 		}
 		c.state = state
 	}()
 	if err := checkAmbientHooks(); err != nil {
-		return external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.antigravityIsolationUnsupported"}, err
+		return external.ConnectionState{Status: "unavailable", ReasonKey: "agentRuntime.antigravityIsolationUnsupported"}, external.Models{}, err
 	}
-	_, err = c.Models(ctx)
+	models, err = c.Models(ctx)
 	if errors.Is(err, errAuthenticationRequired) {
-		return external.ConnectionState{Status: "auth_required"}, nil
+		return external.ConnectionState{Status: "auth_required"}, external.Models{}, nil
 	}
 	if err != nil {
-		return state, err
+		return state, external.Models{}, err
 	}
-	return external.ConnectionState{Status: "ready"}, nil
+	return external.ConnectionState{Status: "ready"}, models, nil
 }
 
 func (c *Client) Close() error {
@@ -126,7 +141,7 @@ func (c *Client) Close() error {
 // Models uses the CLI's read-only catalog command, which currently exposes text
 // columns rather than JSON. It never sends a prompt or starts a model turn.
 func (c *Client) Models(ctx context.Context) (external.Models, error) {
-	ctx, cancel := context.WithTimeout(ctx, infrastructureTimeout)
+	ctx, cancel := context.WithTimeout(ctx, catalogTimeout)
 	defer cancel()
 	dir, err := os.MkdirTemp("", "denova-antigravity-models-")
 	if err != nil {

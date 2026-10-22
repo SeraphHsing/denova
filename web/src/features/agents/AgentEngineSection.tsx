@@ -31,6 +31,10 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
   const settings = selected === 'native' ? undefined : resolved[selected]
   const ownSettings = selected === 'native' ? undefined : value[selected]
   const executionSettings = selected === 'codex' && resolved.codex?.sandbox ? { sandbox: resolved.codex.sandbox } : {}
+  // The context window is conversation-owned; every other edit must carry it or
+  // selecting a model would silently drop the user's choice.
+  const contextWindow = selected === 'grok' ? resolved.grok?.context_window : undefined
+  const enginePatch = contextWindow ? { ...executionSettings, context_window: contextWindow } : executionSettings
   const selectedProfile = profiles.find(item => item.id === runtimeModelKey(settings))
   const model = models.items.find((item) => item.id === settings?.model)
   const source = settings?.profile_id ? 'denova' : 'cli'
@@ -51,6 +55,9 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
     if (selected === 'native' || !ready) { setModels({ items: [] }); return }
     let active = true
     setModels({ items: [] })
+    // A catalog read that failed before must not stay on screen once the engine
+    // answers again: the badge shows the current status, this line is the retry.
+    setError('')
     void fetchEngineModels(selected).then((next) => { if (active) setModels(next) })
       .catch(() => { if (active) setError(t('agentRuntime.connectionFailed')) })
     return () => { active = false }
@@ -97,7 +104,7 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
             // Source changes select a usable model atomically; no incomplete settings are saved.
             const key = nextSource === 'denova' ? profiles[0]?.id : `cli:${models.default_id || models.items[0]?.id || ''}`
             if (!key || key === 'cli:') return
-            onChange({ ...value, [selected]: { ...executionSettings, ...runtimeModelFromKey(key) } })
+            onChange({ ...value, [selected]: { ...enginePatch, ...runtimeModelFromKey(key) } })
           }}>
           <ToggleGroupItem value="cli" disabled={source !== 'cli' && (!ready || !models.items.length)}>{t('agentRuntime.cliModels')}</ToggleGroupItem>
           <ToggleGroupItem value="denova" disabled={source !== 'denova' && !profiles.length}>{t('agentRuntime.apiModels')}</ToggleGroupItem>
@@ -111,7 +118,7 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
         <Field label={t('agentRuntime.model')} inherited={ownSettings == null}
           onReset={ownSettings ? () => { const next = { ...value }; delete next[selected]; onChange(next) } : undefined}>
           <Select value={runtimeModelKey(settings)} disabled={busy || (source === 'cli' ? !ready : !profiles.length)}
-            onValueChange={(key) => onChange({ ...value, [selected]: { ...executionSettings, ...runtimeModelFromKey(key) } })}>
+            onValueChange={(key) => onChange({ ...value, [selected]: { ...enginePatch, ...runtimeModelFromKey(key) } })}>
             <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label={t('agentRuntime.model')}><SelectValue placeholder={t('agentRuntime.chooseModel')} /></SelectTrigger>
             <SelectContent position="popper" align="start" className="w-(--radix-select-trigger-width) max-w-[calc(100vw-2rem)]"><SelectGroup>
               {settings && !model && !selectedProfile && <SelectItem value={runtimeModelKey(settings)} disabled>{settings.profile_id ?? settings.model}</SelectItem>}
@@ -121,10 +128,19 @@ export function AgentEngineSection({ value, inherited, onChange, beforeSwitch, o
           </Select>
         </Field>
         {model && model.efforts.length > 0 && <Field label={t('agentRuntime.effort')}>
-          <Select value={settings?.effort ?? 'default'} disabled={busy} onValueChange={(effort) => onChange({ ...value, [selected]: { ...executionSettings, model: model.id, ...(effort === 'default' ? {} : { effort }) } })}>
+          <Select value={settings?.effort ?? 'default'} disabled={busy} onValueChange={(effort) => onChange({ ...value, [selected]: { ...enginePatch, model: model.id, ...(effort === 'default' ? {} : { effort }) } })}>
             <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label={t('agentRuntime.effort')}><SelectValue /></SelectTrigger>
             <SelectContent><SelectGroup><SelectItem value="default">{t('agentRuntime.defaultEffort')}</SelectItem>
               {model.efforts.map((effort) => <SelectItem key={effort} value={effort}>{effort}</SelectItem>)}
+            </SelectGroup></SelectContent>
+          </Select>
+        </Field>}
+        {selected === 'grok' && model && <Field label={t('agentRuntime.contextWindow')}>
+          <Select value={contextWindow ? String(contextWindow) : 'default'} disabled={busy}
+            onValueChange={(size) => onChange({ ...value, grok: { model: model.id, ...(settings?.effort ? { effort: settings.effort } : {}), ...(size === 'default' ? {} : { context_window: Number(size) }) } })}>
+            <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label={t('agentRuntime.contextWindow')}><SelectValue /></SelectTrigger>
+            <SelectContent><SelectGroup><SelectItem value="default">{t('agentRuntime.defaultContextWindow')}</SelectItem>
+              {[256000, 500000, 1000000].map((size) => <SelectItem key={size} value={String(size)}>{`${size / 1000}K`}</SelectItem>)}
             </SelectGroup></SelectContent>
           </Select>
         </Field>}

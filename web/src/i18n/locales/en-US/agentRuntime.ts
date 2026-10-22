@@ -1,6 +1,6 @@
 const agentRuntime = {
   'agentRuntime.configure': "Configure",
-  'agentRuntime.checking': "Checking availability…",
+  'agentRuntime.checking': "Loading runtimes…",
   'agentRuntime.apiProfileHint': "Uses the API connection from the Denova model profile without CLI sign-in. The engine manages sampling and reasoning; profile temperature, output limit and context window settings do not apply.",
   'agentRuntime.cliConnection': "CLI account status",
   'agentRuntime.cliModels': "CLI models",
@@ -54,6 +54,8 @@ const agentRuntime = {
   'agentRuntime.chooseModel': "Check the connection, then select a model",
   'agentRuntime.effort': "Reasoning effort",
   'agentRuntime.defaultEffort': "Model default",
+  'agentRuntime.contextWindow': "Context window",
+  'agentRuntime.defaultContextWindow': "Model default",
   'agentRuntime.nativeInactive': "Native permissions, compaction, checkpoint guidance and Subagents settings are retained and inactive. Switching back to Native restores them.",
   'agentRuntime.sharedInputBudget': "Shared context input budget",
   'agentRuntime.policy.providedToolsWithoutApproval': "This engine reads and writes the project through Denova tools without per-action approval. Questions wait for your answers.",

@@ -100,7 +100,11 @@ for (const kind of ['writing', 'general', 'game'] as const) {
         await expect(page.getByRole('menuitem', { name: 'Claude Code', exact: true })).toBeDisabled()
         await expect(page.getByText('未安装', { exact: true })).toBeVisible()
         await page.screenshot({ path: test.info().outputPath('unavailable-runtime.png'), animations: 'disabled' })
-        // Opening the menu checks unknown engines without selecting them.
+        // Opening the menu only reads cached state. An unknown engine is probed
+        // when the user selects it, and a probe never switches the runtime.
+        await expect(page.getByText('尚未检查', { exact: true })).toBeVisible()
+        expect(codexChecks).toBe(0)
+        await page.getByRole('menuitem', { name: 'Codex', exact: true }).click()
         await expect.poll(() => codexChecks).toBe(1)
         await expect(page.getByText('尚未检查', { exact: true })).toHaveCount(0)
         await expect(page.getByRole('menuitem', { name: 'Codex', exact: true })).toBeEnabled()

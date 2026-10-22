@@ -5,6 +5,6 @@ package buildinfo
 var Version = "dev"
 
 // DevelopmentVersion is the public capability target of this source tree.
-const DevelopmentVersion = "0.6.6"
+const DevelopmentVersion = "0.6.7"
 
 const Repository = "alfredxw/denova"

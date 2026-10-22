@@ -118,26 +118,23 @@ func TestRunCancellationPreservesPartialResponse(t *testing.T) {
 	}
 }
 
-// Native approval prompts stay advertised regardless of the scoped agent, so a
-// scoped turn must run with them instead of failing the whole attempt.
-func TestRunToleratesNativeApprovalPrompts(t *testing.T) {
-	client := fixtureClient(t, "approval")
-	host := &testHost{}
-	result, err := client.Run(t.Context(), fixtureInput(t), host)
-	if err != nil || !result.Settled || result.Text != "Task completed." {
-		t.Fatalf("approval result: %#v %v", result, err)
-	}
-	if len(host.calls) != 1 || host.calls[0].Name != "record" {
-		t.Fatalf("host calls: %#v", host.calls)
-	}
-}
-
-func TestRunRejectsUnsafeToolsBeforeHostEffects(t *testing.T) {
-	client := fixtureClient(t, "unsafe")
-	host := &testHost{}
-	result, err := client.Run(t.Context(), fixtureInput(t), host)
-	if err == nil || !strings.Contains(err.Error(), "unscoped tool") || len(host.calls) != 0 || result.Settled {
-		t.Fatalf("unsafe result: %#v calls=%#v err=%v", result, host.calls, err)
+// The CLI advertises provider tools the frontmatter never declared: approval
+// prompts in every build, browser session tools in newer ones, and whatever the
+// next release adds. Their names are not knowable ahead of time, so an unlisted
+// one is recorded and the turn continues; product effects still only settle
+// through Host.
+func TestRunToleratesProviderToolsOutsideScope(t *testing.T) {
+	for _, mode := range []string{"approval", "browser", "unsafe"} {
+		t.Run(mode, func(t *testing.T) {
+			host := &testHost{}
+			result, err := fixtureClient(t, mode).Run(t.Context(), fixtureInput(t), host)
+			if err != nil || !result.Settled || result.Text != "Task completed." {
+				t.Fatalf("%s result: %#v %v", mode, result, err)
+			}
+			if len(host.calls) != 1 || host.calls[0].Name != "record" {
+				t.Fatalf("%s host calls: %#v", mode, host.calls)
+			}
+		})
 	}
 }
 
@@ -183,22 +180,23 @@ func TestRejectsUnsupportedInputAndOperations(t *testing.T) {
 			t.Fatalf("unsupported operation %q accepted", mode)
 		}
 	}
-	for _, image := range []external.Input{
-		{Attachments: []agentschema.Attachment{{MediaType: "image/png"}}},
+	// Historical images belong to the provider conversation that received them;
+	// replaying the text without them must not fail the turn.
+	for _, history := range []external.Input{
 		{History: []external.Message{{Role: "user", Attachments: []agentschema.Attachment{{MediaType: "image/png"}}}}},
 		{History: []external.Message{{Role: "assistant", ToolImages: []agentschema.Attachment{{MediaType: "image/png"}}}}},
 	} {
-		if _, err := encodeInput(image); err == nil {
-			t.Fatal("image input was silently dropped")
+		if _, err := encodeInput(history, nil); err != nil {
+			t.Fatalf("historical image rejected: %v", err)
 		}
 	}
 	input := external.Input{History: []external.Message{{Role: "user", Text: "Historical request"}}, Text: "Current request"}
-	body, err := encodeInput(input)
+	body, err := encodeInput(input, []string{"ref1.png"})
 	var event struct {
 		Event   string                   `json:"event"`
 		Message struct{ Content string } `json:"message"`
 	}
-	if err != nil || json.Unmarshal(body, &event) != nil || event.Event != "user" || !strings.Contains(event.Message.Content, "prior conversation data") || !strings.Contains(event.Message.Content, "Current request") {
+	if err != nil || json.Unmarshal(body, &event) != nil || event.Event != "user" || !strings.Contains(event.Message.Content, "prior conversation data") || !strings.Contains(event.Message.Content, "Current request") || !strings.Contains(event.Message.Content, "@ref1.png") {
 		t.Fatalf("encoded input: %s %v", body, err)
 	}
 }
@@ -241,6 +239,9 @@ func TestAntigravityFixtureProcess(t *testing.T) {
 			panic("missing native flag " + key)
 		}
 	}
+	if !slices.Contains(args, "--sandbox") {
+		panic("attempt must keep native tools inside the sandbox")
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	if !scanner.Scan() || !json.Valid(scanner.Bytes()) || !strings.Contains(string(scanner.Bytes()), `"event":"user"`) {
 		panic("expected one native NDJSON user event")
@@ -265,7 +266,10 @@ func TestAntigravityFixtureProcess(t *testing.T) {
 		Subagent   bool             `yaml:"subagent"`
 		MCPServers []map[string]any `yaml:"mcpServers"`
 	}
-	if len(frontmatter) != 3 || yaml.Unmarshal([]byte(frontmatter[1]), &agent) != nil || !agent.Exclude || agent.Inherit || agent.Subagent {
+	// inheritCustomizations must stay off (ambient isolation), but
+	// excludeDefaultComponents must stay off too: it removes the default file
+	// reader that the "@name" image channel depends on.
+	if len(frontmatter) != 3 || yaml.Unmarshal([]byte(frontmatter[1]), &agent) != nil || agent.Exclude || agent.Inherit || agent.Subagent {
 		panic("agent did not isolate product capabilities")
 	}
 	if mode == "summary" {
@@ -273,16 +277,18 @@ func TestAntigravityFixtureProcess(t *testing.T) {
 			panic("summary reused provider conversation or tools")
 		}
 		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":[]}}`)
-	} else if !slices.Equal(agent.Tools, []string{"call_mcp_tool"}) || len(agent.MCPServers) != 1 {
+	} else if len(agent.Tools) != 0 || len(agent.MCPServers) != 1 {
 		panic("unexpected product tool configuration")
 	} else if mode == "unsafe" {
 		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":["call_mcp_tool","run_command"]}}`)
 	} else if mode == "approval" {
 		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":["ask_custom_permission","call_mcp_tool"]}}`)
+	} else if mode == "browser" {
+		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":["browser_click_element","browser_navigate","call_mcp_tool"]}}`)
 	} else {
 		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":["call_mcp_tool"]}}`)
 	}
-	if mode == "tool" || mode == "unsafe" || mode == "concurrent" || mode == "approval" {
+	if mode == "tool" || mode == "unsafe" || mode == "concurrent" || mode == "approval" || mode == "browser" {
 		server := agent.MCPServers[0]
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()

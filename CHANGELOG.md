@@ -10,6 +10,39 @@ Denova records major user-visible features, important compatibility or data chan
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)。
 
+## [v0.6.7] - 2026-10-22
+
+### Brief / 简要说明
+
+#### 中文
+
+- 修复 Antigravity CLI 因自身内置工具集导致整轮执行失败，并在受限沙箱内运行该 CLI；Grok Build 改用 CLI 的无头单轮通道，可选到 Grok 4.7 / 4.7-fast，并新增会话级上下文大小。
+- 修复打开模型菜单或切换模型时反复检查引擎可用性的问题：检查改为用户显式触发，已就绪的引擎和模型目录复用缓存，未登录的 Grok Build 显示为需要登录。
+
+#### English
+
+- Fixed Antigravity CLI turns aborting on its own built-in toolset and runs that CLI inside its restricted sandbox; Grok Build now uses the CLI's headless single-turn channel, reaching Grok 4.7 / 4.7-fast and gaining a per-conversation context window.
+- Fixed repeated engine availability checks when opening the model menu or switching models: checks now happen only on explicit user action, ready engines and their model catalogs come from cache, and a signed-out Grok Build reports sign-in required.
+
+### Fixed / 修复
+
+- 修复 Antigravity CLI 把 CLI 自带工具当作越权工具、导致整轮执行失败的问题：该 CLI 的 agent 定义只能追加组件、无法过滤内置工具，因此不再按工具名判定越权，改在沙箱内运行以限制其原生命令工具；产品副作用仍只经由宿主工具提交，声明的工具缺失时仍会拒绝。
+- 修复 Antigravity CLI 带产品工具的回合无法启动（`unknown component: tool "call_mcp_tool"`）的问题：agent 定义不再把内置的 MCP 派发工具当作可挂载组件声明。
+- Grok Build 改用 CLI 的无头单轮通道：模型列表来自 CLI 自带目录，可选到 Grok 4.7 / 4.7-fast 等新模型；新增会话级「上下文大小」；参考图会压缩后随请求发送；原生工具收窄为计划、工具检索与工具调用三个基础设施工具，项目读写仍只经由宿主工具；Grok 会话因此不再支持中途引导输入（可取消、可排队）。
+- 修复 Grok Build 偶发执行失败（响应标识不匹配），随通道更换一并消除。
+- 修复聊天界面每次打开运行时菜单都要重新检查引擎、容器重启后反复拉起 CLI 进程的问题：可用性检查只在用户点选未检查的引擎或点击「检查」时执行；切换模型与推理强度改用缓存的模型目录校验，游戏中换模型不再重新探测；检查结果与失败原因按引擎缓存并短暂退避，打开菜单只读取已有状态；Grok Build 未登录时返回「需要登录」而不是连接失败。
+- 修复「检查」显示可用后紧接着报「连接引擎失败」的问题：检查已经拿到的模型目录直接进入缓存，不再为同一次读取重复执行 CLI 命令；目录刷新失败时继续使用上一次的目录，并在日志中记录真实原因；Antigravity CLI 的目录读取本身要走网络（容器内实测 4–11 秒），超时上限从 15 秒放宽，避免在较慢网络下被误判为连接失败。
+- Fixed the runtime menu re-checking engines on every open and respawning CLI processes on each container restart: availability is checked only when the user selects an unchecked engine or presses check, model and effort changes validate against the cached catalog (including in games), probe results and failures are cached per engine with a short backoff, opening the menu only reads existing state, and a signed-out Grok Build now reports sign-in required instead of a connection failure.
+- Fixed "connection failed" appearing right after a successful check: the catalog a check already obtained is cached instead of running the same CLI command again, a failed catalog refresh keeps the last known list, and the real cause is logged. The Antigravity CLI resolves its catalog over the network (4-11s measured in the container), so its timeout no longer shares the 15s control-plane limit and slow networks are not reported as a broken connection.
+- Fixed Antigravity CLI attempts aborting on the CLI's own built-in toolset: its agent definition mounts components instead of filtering native tools, so tools are no longer judged by name and the CLI now runs inside its restricted sandbox, which bounds its native command tools. Product effects still commit only through host tools, and a missing declared tool is still fatal.
+- Fixed Antigravity CLI turns with product tools failing to start (`unknown component: tool "call_mcp_tool"`): the agent definition no longer declares the built-in MCP dispatcher as a mountable component.
+- Grok Build now runs on the CLI's headless single-turn channel: the model list comes from the CLI's own catalog (reaching Grok 4.7 / 4.7-fast), conversations gain a context window, reference images are compressed and sent with the request, and native tools are narrowed to plan, tool discovery and tool dispatch so project reads and writes still travel only through host tools. Grok conversations therefore no longer support steering mid-turn (cancel and queue remain).
+- Fixed sporadic Grok Build failures on mismatched response identities; the channel change removes that protocol path entirely.
+- 修复模型提供方在流式回复中途断开时整轮立即失败、已配置的重试完全不生效的问题：流内错误现在按提供方错误分类重试，游戏与写作回合可自动继续。
+- 修复游戏开场生成失败后「重新生成这一轮」点击无反应的问题：没有已提交回合时会重新发起开场生成。
+- Fixed turns failing immediately when a provider broke a streaming response mid-flight, which bypassed the configured retries: in-stream errors are now classified like provider errors and retried, so game and writing turns continue automatically.
+- Fixed "regenerate this turn" doing nothing after a game opening failed to generate: the opening is now requested again when no turn was committed.
+
 ## [v0.6.6] - 2026-10-21
 
 ### Brief / 简要说明

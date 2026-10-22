@@ -6,7 +6,7 @@ export type RuntimeModelSettings = CLIModelSettings | { profile_id: string; mode
 export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access'
 export type CodexRuntimeSettings = RuntimeModelSettings & { sandbox?: CodexSandbox }
 export type ClaudeRuntimeSettings = RuntimeModelSettings
-export type GrokRuntimeSettings = CLIModelSettings
+export type GrokRuntimeSettings = CLIModelSettings & { context_window?: number }
 export type AntigravityRuntimeSettings = CLIModelSettings
 export interface RuntimePreferences { selected?: AgentEngineID; codex?: CodexRuntimeSettings; claude?: ClaudeRuntimeSettings; grok?: GrokRuntimeSettings; antigravity?: AntigravityRuntimeSettings }
 export type RuntimeSelection = { kind: 'native' } | { kind: 'codex'; codex: CodexRuntimeSettings } | { kind: 'claude'; claude: ClaudeRuntimeSettings }

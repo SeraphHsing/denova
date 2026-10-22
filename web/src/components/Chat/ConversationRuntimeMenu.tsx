@@ -1,10 +1,10 @@
 import { InlineErrorNotice } from '@/components/common/inline-error-notice'
 import { errorMessage } from '@/lib/error-diagnostics'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from '@/components/ui/dropdown-menu'
-import { AGENT_ENGINE_CHECKED_EVENT, checkAgentEngine, fetchAgentEngines, fetchEngineModels } from '@/features/agent-runtime/api'
+import { checkAgentEngine, fetchAgentEngines, fetchEngineModels } from '@/features/agent-runtime/api'
 import { runtimeProfileOptions } from '@/features/agent-runtime/api-profiles'
 import { AGENT_ENGINE_IDS, type AgentEngineID } from '@/features/agent-runtime/types'
 import type { ConversationConfigChanges, ConversationConfigController } from '@/features/conversation-config/types'
@@ -15,10 +15,6 @@ import { normalizeThinkingLevel } from '@/features/settings/thinking-levels'
 import { useIsMobile } from '@/hooks/useIsMobile'
 
 type RuntimeChoice = { kind: AgentEngineID; changes?: ConversationConfigChanges; reason?: string; unchecked?: boolean }
-
-// Reopening the menu reuses the last resolution. Reading engine models can spawn
-// CLI processes, so an opportunistic refresh must not block the first paint.
-const choicesCacheTTL = 30_000
 
 /** Resolves effective defaults without changing Agent preferences. API profiles do
  * not require CLI authentication; the server validates admission before commit. */
@@ -85,7 +81,8 @@ async function loadChoices(controller: ConversationConfigController, only?: Agen
   }))
 }
 
-/** Model-menu selector. Opening or checking never switches the bound session. */
+/** Model-menu selector. Opening reads cached engine state and never probes: a
+ * probe spawns a CLI process, so it belongs to an explicit user action. */
 export function ConversationRuntimeMenu({ controller, runActive, disabled = false, onConfigure, configurationDisabled = false, onRuntimeChanged }: {
   controller: ConversationConfigController
   runActive: boolean
@@ -102,75 +99,37 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
   const [pending, setPending] = useState<AgentEngineID | null>(null)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
-  const autoChecked = useRef(new Set<AgentEngineID>())
-  const choicesCache = useRef<{ key: string; at: number; choices: RuntimeChoice[] } | null>(null)
   const current = controller.snapshot?.runtime?.kind ?? 'native'
   const draftStory = controller.binding?.mode === 'interactive' && !controller.binding.story_id
-  const cacheKey = [JSON.stringify(controller.binding), controller.snapshot?.revision ?? '', revision].join('|')
-  const visibleChoices = choicesCache.current?.key === cacheKey ? choices : []
-  // Cached choices stay selectable while an opportunistic refresh runs.
-  const selectionDisabled = disabled || !controller.initialized || controller.loading || runActive || controller.saving || Boolean(pending) || (loading && !visibleChoices.length) || draftStory
+  const selectionDisabled = disabled || !controller.initialized || controller.loading || runActive || controller.saving || Boolean(pending) || (loading && !choices.length) || draftStory
 
   useEffect(() => {
-    const invalidate = () => {
-      choicesCache.current = null
-      setRevision(value => value + 1)
-    }
+    const invalidate = () => setRevision(value => value + 1)
     const target = controller.binding?.project_id
       ? projectSettingsTarget(controller.binding.project_id) : GLOBAL_SETTINGS_TARGET
     let previousSettings = ''
-    const unsubscribe = subscribeSettingsTarget(target, snapshot => {
+    return subscribeSettingsTarget(target, snapshot => {
       // Fetching an identical snapshot must not trigger a refresh loop.
       const signature = JSON.stringify(snapshot.effective ?? {})
       if (signature === previousSettings) return
       previousSettings = signature
       invalidate()
     })
-    window.addEventListener(AGENT_ENGINE_CHECKED_EVENT, invalidate)
-    return () => {
-      unsubscribe()
-      window.removeEventListener(AGENT_ENGINE_CHECKED_EVENT, invalidate)
-    }
   }, [controller.binding?.project_id])
 
   useEffect(() => {
     if (!open) return
     let active = true
-    // Engines only report readiness after an explicit probe; ask once per engine
-    // so a failed check cannot loop through this effect.
-    const checkUnchecked = (next: RuntimeChoice[]) => {
-      const pendingKinds = next.filter(choice => choice.unchecked && !autoChecked.current.has(choice.kind)).map(choice => choice.kind)
-      if (!pendingKinds.length) return
-      for (const kind of pendingKinds) autoChecked.current.add(kind)
-      console.info('[conversation-config] checking engines without cached status', { engines: pendingKinds })
-      void Promise.allSettled(pendingKinds.map(kind => checkAgentEngine(kind))).then(() => {
-        // Checks can finish while the submenu is closed. Retire its old
-        // unchecked snapshot so reopening observes the completed probes.
-        choicesCache.current = null
-        if (active) setRevision(value => value + 1)
-      })
-    }
-    const cached = choicesCache.current
-    if (cached?.key === cacheKey && Date.now() - cached.at < choicesCacheTTL) {
-      setChoices(cached.choices)
-      setError('')
-      setLoading(false)
-      checkUnchecked(cached.choices)
-      return () => { active = false }
-    }
     setLoading(true)
     setError('')
     void loadChoices(controller).then(next => {
-      if (!active) return
-      choicesCache.current = { key: cacheKey, at: Date.now(), choices: next }
-      setChoices(next)
-      checkUnchecked(next)
+      if (active) setChoices(next)
     }).catch(cause => {
       console.warn('[conversation-config] load runtime choices failed', { cause })
       if (active) { setChoices([]); setError(errorMessage(cause, t('agentRuntime.connectionFailed'))) }
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [open, cacheKey, controller.binding, controller.snapshot?.custom_agent_id, controller.snapshot?.agent_kind, controller.snapshot?.profile_id, t])
+  }, [open, revision, controller.binding, controller.snapshot?.custom_agent_id, controller.snapshot?.agent_kind, controller.snapshot?.profile_id, t])
 
   const act = async (choice: RuntimeChoice) => {
     if (selectionDisabled || (choice.kind === current && !controller.error)) return
@@ -178,6 +137,8 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
     setError('')
     try {
       if (choice.unchecked) {
+        // An unknown engine is probed only when the user selects it, and a probe
+        // never switches the bound conversation.
         try { await checkAgentEngine(choice.kind) } finally { setRevision(value => value + 1) }
       } else if (choice.changes) {
         // Re-resolve only the chosen engine so changed settings cannot apply
@@ -208,7 +169,7 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
       {/* Narrow screens overlay the parent menu to keep all choices in view. */}
       <DropdownMenuSubContent avoidCollisions={!narrow} className="max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto w-64 max-w-[calc(100vw-1rem)] border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-1.5 text-[var(--nova-text)] max-[700px]:w-56 max-[700px]:[translate:calc(-1*var(--radix-popper-anchor-width))_0]">
         <DropdownMenuGroup>
-          {visibleChoices.map(choice => <div key={choice.kind}>
+          {choices.map(choice => <div key={choice.kind}>
             {/* A failed defaults write can leave the conversation switched. Allow reselecting it to retry. */}
             <DropdownMenuItem disabled={selectionDisabled || (choice.kind === current && !controller.error) || (!choice.changes && !choice.unchecked)}
               aria-label={t(`agentRuntime.${choice.kind}`)} aria-current={choice.kind === current ? 'true' : undefined}
@@ -218,7 +179,7 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
             </DropdownMenuItem>
             {choice.reason && <p className="px-1.5 pb-1 text-xs text-muted-foreground">{t(choice.reason)}</p>}
           </div>)}
-          {loading && !visibleChoices.length && <p role="status" className="px-1.5 py-1 text-xs">{t('agentRuntime.checking')}</p>}
+          {loading && !choices.length && <p role="status" className="px-1.5 py-1 text-xs">{t('agentRuntime.checking')}</p>}
           <DropdownMenuItem disabled={configurationDisabled} onSelect={onConfigure}>{t('agentRuntime.configure')}</DropdownMenuItem>
         </DropdownMenuGroup>
         <p className="whitespace-normal px-1.5 py-1 text-[11px] text-muted-foreground">

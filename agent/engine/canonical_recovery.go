@@ -76,7 +76,7 @@ func RestoreCanonicalCheckpoint(ctx context.Context, checkpoint PersistedMessage
 	if count != checkpoint.MessageCount {
 		return nil, false, fmt.Errorf("%w: aligned checkpoint message count changed (%d != %d)", canonical.ErrInvalidCanonicalMessages, count, checkpoint.MessageCount)
 	}
-	hash, err := schema.HashCanonical(state.Messages)
+	hash, err := schema.HashCanonicalMessages(state.Messages)
 	if err != nil {
 		return nil, false, err
 	}

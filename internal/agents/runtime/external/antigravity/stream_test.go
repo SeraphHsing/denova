@@ -8,6 +8,12 @@ import (
 
 func TestStreamTerminalReconciliationAndProtocolIdentity(t *testing.T) {
 	host := &testHost{}
+	// Provider tool names change between CLI releases; an unlisted name is
+	// reported but must not abort the turn.
+	private := streamOutput{allowed: map[string]bool{"call_mcp_tool": true}}
+	if err := private.feed([]byte(`{"event":"init","conversation_id":"conversation-1","init":{"tools":["ask_custom_permission","browser_click_element","run_command","write_to_file","call_mcp_tool"]}}`), host); err != nil {
+		t.Fatalf("provider tools were refused: %v", err)
+	}
 	output := streamOutput{allowed: map[string]bool{}}
 	for _, line := range []string{
 		`{"event":"init","conversation_id":"conversation-1","init":{"tools":[]}}`,
@@ -27,7 +33,7 @@ func TestStreamTerminalReconciliationAndProtocolIdentity(t *testing.T) {
 		`{"type":"control_response","response":{"subtype":"success"}}`,
 		`{"event":"step_update","step_update":{"conversation_id":"uninitialized","step_type":"agent_response","state":"DONE","text_delta":"Unscoped"}}`,
 		`{"event":"result","result":{"status":"SUCCESS","response":"Uninitialized"}}`,
-		`{"event":"init","conversation_id":"conversation-1","init":{"tools":["run_command"]}}`,
+
 	} {
 		stream := streamOutput{allowed: map[string]bool{}}
 		if err := stream.feed([]byte(line), &testHost{}); err == nil {

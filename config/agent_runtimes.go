@@ -73,6 +73,24 @@ func (settings ClaudeRuntimeSettings) validate() error {
 type GrokRuntimeSettings struct {
 	Model  string `toml:"model,omitempty" json:"model,omitempty"`
 	Effort string `toml:"effort,omitempty" json:"effort,omitempty"`
+	// ContextWindow is the conversation-owned context size. It is written to the
+	// attempt's private model section because the CLI has no flag for it. Zero
+	// keeps the model default so a new model cannot be pinned to a stale size.
+	ContextWindow int `toml:"context_window,omitempty" json:"context_window,omitempty"`
+}
+
+// GrokContextWindowLimit bounds a conversation-owned context size so a typo
+// cannot request a window the provider will reject.
+const GrokContextWindowLimit = 10_000_000
+
+func (settings GrokRuntimeSettings) validate() error {
+	if err := validateRuntimeModel(settings.Model, "", settings.Effort); err != nil {
+		return err
+	}
+	if settings.ContextWindow < 0 || settings.ContextWindow > GrokContextWindowLimit {
+		return fmt.Errorf("%w: Grok context window must be 0 or within 1..%d tokens", ErrInvalidAgentRuntime, GrokContextWindowLimit)
+	}
+	return nil
 }
 
 // AntigravityRuntimeSettings uses Antigravity's model and effort vocabulary.
@@ -126,7 +144,7 @@ func (preferences RuntimePreferences) Validate() error {
 		}
 	}
 	if preferences.Grok != nil {
-		if err := validateRuntimeModel(preferences.Grok.Model, "", preferences.Grok.Effort); err != nil {
+		if err := preferences.Grok.validate(); err != nil {
 			return err
 		}
 	}
@@ -211,7 +229,7 @@ func (selection RuntimeSelection) Validate(agentKind string) error {
 		if selection.Grok == nil {
 			return fmt.Errorf("%w: Grok settings are required", ErrInvalidAgentRuntime)
 		}
-		return validateRuntimeModel(selection.Grok.Model, "", selection.Grok.Effort)
+		return selection.Grok.validate()
 	case RuntimeAntigravity:
 		if selection.Antigravity == nil {
 			return fmt.Errorf("%w: Antigravity settings are required", ErrInvalidAgentRuntime)
