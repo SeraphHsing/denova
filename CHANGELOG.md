@@ -12,20 +12,22 @@ Denova records major user-visible features, important compatibility or data chan
 
 ## [Unreleased]
 
-## [v0.6.7-b] - 2026-10-23
+## [v0.6.3-b] - 2026-10-23
 
 ### Brief / 简要说明
 
 #### 中文
 
-- 合并上游功能：新增内置互动游戏创作 Skill、可选决策模型、资料正文提及检索与内置网文创作 Skill；修复编辑原文后批注阻断发送、Windows 文件定位误报失败。
+- 在上游 v0.6.3 基础上，新增 Grok Build 与 Antigravity CLI 执行引擎、内置互动游戏创作与网文创作 Skill、可选决策模型和资料正文提及检索；修复一系列 CLI 运行时、引擎可用性、游戏恢复、局域网管理与流式重试问题。
 
 #### English
 
-- Merges upstream features: adds a built-in interactive-game design Skill, optional decision models, Lore text-mention search, and a built-in novel-writing Skill; fixes comments blocking messages after source edits and false failures when revealing files on Windows.
+- On top of upstream v0.6.3, adds Grok Build and Antigravity CLI engines, built-in interactive-game and novel-writing Skills, optional decision models, and Lore text-mention search; fixes CLI runtime, engine availability, game recovery, LAN management, and streaming-retry issues.
 
 ### Added / 新增
 
+- 创作、通用对话与游戏 Agent 新增 Grok Build 和 Antigravity CLI 执行引擎，支持读取本机 CLI 模型、保存独立引擎设置和切换会话模型。
+- Writing, General Chat, and Game Agents add Grok Build and Antigravity CLI execution engines, with local CLI model discovery, independent engine settings, and per-conversation model selection.
 - 内置互动游戏创作 Skill，支持游戏构思与核心循环、世界与角色资料库、状态系统、规则判定、游戏规划、开局回合和跑团诊断。
 - A built-in interactive-game design Skill covers game premises and loops, world and character Lore, state systems, rules and checks, planning, openings and turns, and play diagnostics.
 - 互动游戏创作 Skill 补充经典网文向的成长体系、爽点结构、资源与社会资本、世界阶梯、副本/规则恐怖/都市隐杀和外观沉浸感设计。
@@ -45,25 +47,6 @@ Denova records major user-visible features, important compatibility or data chan
 - Fixed document comments blocking messages after source edits; original quotes remain available for the Agent to reconcile with current content.
 - 修复 Windows 文件定位已成功打开资源管理器却误报失败的问题。
 - Fixed false failure reports after successfully revealing files in Windows Explorer.
-
-## [v0.6.7] - 2026-10-22
-
-### Brief / 简要说明
-
-#### 中文
-
-- 修复重启后部分写作/聊天会话和游戏分支报「历史记录异常，暂时无法继续」的问题：会话检查点无法自证与日志一致时改为从完整记录重建，不再拒绝该会话。
-- 修复 Antigravity CLI 因自身内置工具集导致整轮执行失败，并在受限沙箱内运行该 CLI；Grok Build 改用 CLI 的无头单轮通道，可选到 Grok 4.7 / 4.7-fast，并新增会话级上下文大小。
-- 修复打开模型菜单或切换模型时反复检查引擎可用性的问题：检查改为用户显式触发，已就绪的引擎和模型目录复用缓存，未登录的 Grok Build 显示为需要登录。
-
-#### English
-
-- Fixed some Writing/Chat sessions and Game branches reporting "history is invalid" after a restart: when a session checkpoint cannot prove itself consistent with the journal, the transcript is rebuilt from the full record instead of rejecting the conversation.
-- Fixed Antigravity CLI turns aborting on its own built-in toolset and runs that CLI inside its restricted sandbox; Grok Build now uses the CLI's headless single-turn channel, reaching Grok 4.7 / 4.7-fast and gaining a per-conversation context window.
-- Fixed repeated engine availability checks when opening the model menu or switching models: checks now happen only on explicit user action, ready engines and their model catalogs come from cache, and a signed-out Grok Build reports sign-in required.
-
-### Fixed / 修复
-
 - 修复 Antigravity CLI 把 CLI 自带工具当作越权工具、导致整轮执行失败的问题：该 CLI 的 agent 定义只能追加组件、无法过滤内置工具，因此不再按工具名判定越权，改在沙箱内运行以限制其原生命令工具；产品副作用仍只经由宿主工具提交，声明的工具缺失时仍会拒绝。
 - 修复 Antigravity CLI 带产品工具的回合无法启动（`unknown component: tool "call_mcp_tool"`）的问题：agent 定义不再把内置的 MCP 派发工具当作可挂载组件声明。
 - Grok Build 改用 CLI 的无头单轮通道：模型列表来自 CLI 自带目录，可选到 Grok 4.7 / 4.7-fast 等新模型；新增会话级「上下文大小」；参考图会压缩后随请求发送；原生工具收窄为计划、工具检索与工具调用三个基础设施工具，项目读写仍只经由宿主工具；Grok 会话因此不再支持中途引导输入（可取消、可排队）。
@@ -82,21 +65,6 @@ Denova records major user-visible features, important compatibility or data chan
 - Fixed "regenerate this turn" doing nothing after a game opening failed to generate: the opening is now requested again when no turn was committed.
 - 修复会话检查点校验过严导致重启后会话不可用的问题：检查点只是日志上的缓存，无法匹配时记录原因并从规范日志重建历史，真正损坏的记录仍按原样拒绝。
 - Fixed cold-load checkpoints rejecting usable conversations: a checkpoint is only a cache over the canonical journal, so an unverifiable fingerprint is logged and the transcript is rebuilt, while genuinely invalid records are still rejected.
-
-## [v0.6.6] - 2026-10-21
-
-### Brief / 简要说明
-
-#### 中文
-
-- 修复选择推理强度后 Grok Build 无法执行，以及 Antigravity CLI 因内置审批工具被误判为越权工具而整轮失败；执行失败时现在会说明是哪一步调用出错及其具体原因。
-
-#### English
-
-- Fixed Grok Build turns failing after a reasoning effort was selected and Antigravity CLI attempts aborted by its built-in approval tool; failures now name the rejected call and its provider reason.
-
-### Fixed / 修复
-
 - 修复在 Grok Build 上选择推理强度后每次执行都以 `Invalid params` 失败的问题：推理强度改为按会话配置项以标量值下发。
 - 修复 Antigravity CLI 把内置审批工具当作越权工具、导致整轮执行失败的问题：只有真正超出范围的工具才会被拒绝。
 - 修复 Claude Code 新增原生工具时整轮执行失败的问题：范围外的原生工具不再中断回合，其调用仍由权限策略拒绝。
@@ -105,65 +73,19 @@ Denova records major user-visible features, important compatibility or data chan
 - Fixed Antigravity CLI attempts aborting because its built-in approval tool was treated as an out-of-scope tool; only genuinely unscoped tools are refused.
 - Fixed Claude Code turns aborting when the CLI adds a native tool: out-of-scope native tools no longer interrupt the turn, and the permission policy still denies their execution.
 - Fixed execution failures reporting only generic reasons such as `Invalid params`; errors now name the rejected call and its provider detail.
-
-## [v0.6.5] - 2026-10-21
-
-### Brief / 简要说明
-
-#### 中文
-
-- 修复游戏 Agent 断连或手动中止后残留的 Pending 回合导致后续无法继续，以及 Grok Build / Antigravity CLI 模型配置保存失败；暂停的回合可以在其他 CLI 上继续原草稿、骰子结果和已确认剧情，或明确放弃。
-
-#### English
-
-- Fixed stuck Game turns after a disconnect or manual abort and missing Grok Build / Antigravity CLI model settings; a suspended turn can resume on another CLI with the original draft, dice results and committed history preserved, or be explicitly discarded.
-
-### Fixed / 修复
-
 - 修复游戏 Agent 断连或手动中止后残留的 Pending 回合导致后续无法继续，以及 Grok Build / Antigravity CLI 模型配置保存失败的问题；支持在旧 CLI 运行已暂停后切换到其他 CLI，使用原草稿、骰子结果和已确认剧情继续。提供明确放弃未完成回合的入口，不改写已提交人物状态或剧情。
 - Fixed stuck pending Game turns after disconnect or abort and missing Grok Build / Antigravity CLI model settings; suspended external Game turns can resume on another CLI while preserving accepted drafts, dice and committed history, or be explicitly discarded.
-
-### Compatibility / 兼容性
-
-- 放弃游戏回合会在故事日志中写入新的 `turn_abandoned` 审计事件；旧版 Denova 可能无法解析已产生此事件的故事文件。降级前请备份工作区。Native 引擎暂不接手 CLI 尚未提交的草稿，请先继续完成或放弃原回合。
-- Discarding a Game turn adds a `turn_abandoned` audit record; older Denova versions may not parse story journals containing this event. Back up the workspace before downgrading. Native cannot yet take over an uncommitted CLI draft.
-
-## [v0.6.4] - 2026-10-20
-
-### Brief / 简要说明
-
-#### 中文
-
-- 修复局域网设备登录后部分管理功能持续返回 403，以及运行时模型菜单反复探测引擎、模型列表要手动检查才出现的问题。
-
-#### English
-
-- Fixed persistent 403 responses for some management actions after LAN sign-in, and repeated engine probing in the runtime model menu that delayed model lists until a manual check.
-
-### Fixed / 修复
-
 - 修复手动上传安装包后重启安装失败（提示“更新程序未确认接手”）的问题：更新程序改为把输出写入本次更新的日志，不再继承可能已断开的终端输出管道。
 - 修复局域网设备登录后插件、游戏与扩展管理请求全部返回 403 的问题：管理接口改为按操作分级，只读查询与项目配置对已登录的局域网设备开放，启动运行时与安装扩展仍仅限本机，并在界面说明原因。
 - 修复对话输入框的运行时菜单每次打开都重新探测引擎、模型列表必须手动检查才出现，以及临时探测失败会把可用引擎显示为断开的问题；引擎状态与模型目录加入缓存，未知状态自动检查，Grok Build 现在沿用本机 `GROK_CONFIG_PATH` 配置，模型列表更完整。
 - Fixed manual package upgrades failing with "updater did not acknowledge handoff" by writing updater output to the update log instead of inheriting terminal output pipes that may already be closed.
 - Fixed every plugin, game, and extension management request returning 403 after LAN sign-in: management actions are classified per operation, so reads and Project configuration work from authenticated LAN devices while runtime starts and package installs stay host-only and explain the limit.
 - Fixed the conversation runtime menu re-probing engines on every open, model lists appearing only after a manual check, and transient probe failures marking a working engine as disconnected; engine state and model catalogs are cached, unknown states are checked automatically, and Grok Build now follows the host `GROK_CONFIG_PATH` configuration for a complete model list.
-## [v0.6.3] - 2026-10-20
 
-### Brief / 简要说明
+### Compatibility / 兼容性
 
-#### 中文
-
-- 创作、通用对话与游戏 Agent 新增 Grok Build 和 Antigravity CLI 执行引擎，可选择本机 CLI 模型、保存独立引擎设置并切换会话模型。
-
-#### English
-
-- Writing, General Chat, and Game Agents add Grok Build and Antigravity CLI execution engines with local CLI model discovery, independent engine settings, and per-conversation model selection.
-
-### Added / 新增
-
-- 创作、通用对话与游戏 Agent 新增 Grok Build 和 Antigravity CLI 执行引擎，支持读取本机 CLI 模型、保存独立引擎设置和切换会话模型。
-- Writing, General Chat, and Game Agents add Grok Build and Antigravity CLI execution engines, with local CLI model discovery, independent engine settings, and per-conversation model selection.
+- 放弃游戏回合会在故事日志中写入新的 `turn_abandoned` 审计事件；旧版 Denova 可能无法解析已产生此事件的故事文件。降级前请备份工作区。Native 引擎暂不接手 CLI 尚未提交的草稿，请先继续完成或放弃原回合。
+- Discarding a Game turn adds a `turn_abandoned` audit record; older Denova versions may not parse story journals containing this event. Back up the workspace before downgrading. Native cannot yet take over an uncommitted CLI draft.
 
 ## [v0.6.2] - 2026-10-19
 
