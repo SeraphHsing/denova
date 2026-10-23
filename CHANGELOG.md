@@ -18,74 +18,34 @@ Denova records major user-visible features, important compatibility or data chan
 
 #### 中文
 
-- 在上游 v0.6.3 基础上，新增 Grok Build 与 Antigravity CLI 执行引擎、内置互动游戏创作与网文创作 Skill、可选决策模型和资料正文提及检索；修复一系列 CLI 运行时、引擎可用性、游戏恢复、局域网管理与流式重试问题。
+- 在上游 v0.6.3 基础上，新增 Grok Build 与 Antigravity CLI 执行引擎，并纳入互动游戏创作与网文创作 Skill、可选决策模型和资料正文提及检索；修复 CLI 运行时、引擎可用性、游戏恢复、局域网管理与流式重试等问题。
 
 #### English
 
-- On top of upstream v0.6.3, adds Grok Build and Antigravity CLI engines, built-in interactive-game and novel-writing Skills, optional decision models, and Lore text-mention search; fixes CLI runtime, engine availability, game recovery, LAN management, and streaming-retry issues.
+- On top of upstream v0.6.3, adds Grok Build and Antigravity CLI engines and incorporates the interactive-game and novel-writing Skills, optional decision models, and Lore text-mention search; fixes CLI runtime, engine availability, game recovery, LAN management, and streaming-retry issues.
 
 ### Added / 新增
 
-- 创作、通用对话与游戏 Agent 新增 Grok Build 和 Antigravity CLI 执行引擎，支持读取本机 CLI 模型、保存独立引擎设置和切换会话模型。
-- Writing, General Chat, and Game Agents add Grok Build and Antigravity CLI execution engines, with local CLI model discovery, independent engine settings, and per-conversation model selection.
-- 内置互动游戏创作 Skill，支持游戏构思与核心循环、世界与角色资料库、状态系统、规则判定、游戏规划、开局回合和跑团诊断。
-- A built-in interactive-game design Skill covers game premises and loops, world and character Lore, state systems, rules and checks, planning, openings and turns, and play diagnostics.
-- 互动游戏创作 Skill 补充经典网文向的成长体系、爽点结构、资源与社会资本、世界阶梯、副本/规则恐怖/都市隐杀和外观沉浸感设计。
-- The interactive-game design Skill now covers classic web-novel progression, payoff structure, resources and social capital, world tiers, instance/rule-horror/urban-undercover patterns, and sensory immersion.
-- Skills 库新增「游戏」分类，可在创建、配置和筛选中使用。
-- The Skills library adds a Game category for creation, configuration, and filtering.
-- 可选决策模型支持游戏舞台素材选择、资料库语义分类和自动化语义触发，不确定或服务不可用时由语言模型兜底。
-- Optional decision models handle Game stage media, Lore semantic classification, and automation semantic triggers, with language-model fallback for uncertain results or service failures.
-- 资料详情新增「作品提及」：查找作品文件与指定故事分支的正文提及，定位文件或只读查看历史回合。
-- Lore details now find text mentions in project files and a selected story branch, with file navigation and read-only historical narrative.
-- 内置网文创作 Skill，支持构思、大纲、人物与规则设计、章节场景、长篇续航和改稿诊断。
-- A built-in novel-writing Skill supports premises, outlines, characters and rules, scenes, long-form continuity, and revision.
+- 创作、通用对话与游戏 Agent 新增 Grok Build 和 Antigravity CLI 执行引擎，支持本机 CLI 模型发现、独立引擎设置与切换会话模型。
+- Writing, General Chat, and Game Agents add Grok Build and Antigravity CLI execution engines with local CLI model discovery, independent engine settings, and per-conversation model selection.
+- 新增内置互动游戏创作 Skill（游戏构思、世界与角色资料库、状态系统、规则判定、开局回合与跑团诊断）及 Skills「游戏」分类。
+- Adds a built-in interactive-game design Skill (game premises, world and character Lore, state systems, rules and checks, openings and turns, play diagnostics) and a Game category for Skills.
+- 新增内置网文创作 Skill，覆盖构思、大纲、人物与规则、场景与长篇续航。
+- Adds a built-in novel-writing Skill covering premises, outlines, characters and rules, scenes, and long-form continuity.
+- 新增可选决策模型，并支持在资料详情中检索作品文件与故事分支的正文提及。
+- Adds optional decision models and Lore text-mention search across project files and story branches.
 
 ### Fixed / 修复
 
-- 修复编辑原文后批注阻断消息发送的问题；保留原文引用，并让 Agent 结合当前内容处理。
-- Fixed document comments blocking messages after source edits; original quotes remain available for the Agent to reconcile with current content.
-- 修复 Windows 文件定位已成功打开资源管理器却误报失败的问题。
-- Fixed false failure reports after successfully revealing files in Windows Explorer.
-- 修复 Antigravity CLI 把 CLI 自带工具当作越权工具、导致整轮执行失败的问题：该 CLI 的 agent 定义只能追加组件、无法过滤内置工具，因此不再按工具名判定越权，改在沙箱内运行以限制其原生命令工具；产品副作用仍只经由宿主工具提交，声明的工具缺失时仍会拒绝。
-- 修复 Antigravity CLI 带产品工具的回合无法启动（`unknown component: tool "call_mcp_tool"`）的问题：agent 定义不再把内置的 MCP 派发工具当作可挂载组件声明。
-- Grok Build 改用 CLI 的无头单轮通道：模型列表来自 CLI 自带目录，可选到 Grok 4.7 / 4.7-fast 等新模型；新增会话级「上下文大小」；参考图会压缩后随请求发送；原生工具收窄为计划、工具检索与工具调用三个基础设施工具，项目读写仍只经由宿主工具；Grok 会话因此不再支持中途引导输入（可取消、可排队）。
-- 修复 Grok Build 偶发执行失败（响应标识不匹配），随通道更换一并消除。
-- 修复聊天界面每次打开运行时菜单都要重新检查引擎、容器重启后反复拉起 CLI 进程的问题：可用性检查只在用户点选未检查的引擎或点击「检查」时执行；切换模型与推理强度改用缓存的模型目录校验，游戏中换模型不再重新探测；检查结果与失败原因按引擎缓存并短暂退避，打开菜单只读取已有状态；Grok Build 未登录时返回「需要登录」而不是连接失败。
-- 修复「检查」显示可用后紧接着报「连接引擎失败」的问题：检查已经拿到的模型目录直接进入缓存，不再为同一次读取重复执行 CLI 命令；目录刷新失败时继续使用上一次的目录，并在日志中记录真实原因；Antigravity CLI 的目录读取本身要走网络（容器内实测 4–11 秒），超时上限从 15 秒放宽，避免在较慢网络下被误判为连接失败。
-- Fixed the runtime menu re-checking engines on every open and respawning CLI processes on each container restart: availability is checked only when the user selects an unchecked engine or presses check, model and effort changes validate against the cached catalog (including in games), probe results and failures are cached per engine with a short backoff, opening the menu only reads existing state, and a signed-out Grok Build now reports sign-in required instead of a connection failure.
-- Fixed "connection failed" appearing right after a successful check: the catalog a check already obtained is cached instead of running the same CLI command again, a failed catalog refresh keeps the last known list, and the real cause is logged. The Antigravity CLI resolves its catalog over the network (4-11s measured in the container), so its timeout no longer shares the 15s control-plane limit and slow networks are not reported as a broken connection.
-- Fixed Antigravity CLI attempts aborting on the CLI's own built-in toolset: its agent definition mounts components instead of filtering native tools, so tools are no longer judged by name and the CLI now runs inside its restricted sandbox, which bounds its native command tools. Product effects still commit only through host tools, and a missing declared tool is still fatal.
-- Fixed Antigravity CLI turns with product tools failing to start (`unknown component: tool "call_mcp_tool"`): the agent definition no longer declares the built-in MCP dispatcher as a mountable component.
-- Grok Build now runs on the CLI's headless single-turn channel: the model list comes from the CLI's own catalog (reaching Grok 4.7 / 4.7-fast), conversations gain a context window, reference images are compressed and sent with the request, and native tools are narrowed to plan, tool discovery and tool dispatch so project reads and writes still travel only through host tools. Grok conversations therefore no longer support steering mid-turn (cancel and queue remain).
-- Fixed sporadic Grok Build failures on mismatched response identities; the channel change removes that protocol path entirely.
-- 修复模型提供方在流式回复中途断开时整轮立即失败、已配置的重试完全不生效的问题：流内错误现在按提供方错误分类重试，游戏与写作回合可自动继续。
-- 修复游戏开场生成失败后「重新生成这一轮」点击无反应的问题：没有已提交回合时会重新发起开场生成。
-- Fixed turns failing immediately when a provider broke a streaming response mid-flight, which bypassed the configured retries: in-stream errors are now classified like provider errors and retried, so game and writing turns continue automatically.
-- Fixed "regenerate this turn" doing nothing after a game opening failed to generate: the opening is now requested again when no turn was committed.
-- 修复会话检查点校验过严导致重启后会话不可用的问题：检查点只是日志上的缓存，无法匹配时记录原因并从规范日志重建历史，真正损坏的记录仍按原样拒绝。
-- Fixed cold-load checkpoints rejecting usable conversations: a checkpoint is only a cache over the canonical journal, so an unverifiable fingerprint is logged and the transcript is rebuilt, while genuinely invalid records are still rejected.
-- 修复在 Grok Build 上选择推理强度后每次执行都以 `Invalid params` 失败的问题：推理强度改为按会话配置项以标量值下发。
-- 修复 Antigravity CLI 把内置审批工具当作越权工具、导致整轮执行失败的问题：只有真正超出范围的工具才会被拒绝。
-- 修复 Claude Code 新增原生工具时整轮执行失败的问题：范围外的原生工具不再中断回合，其调用仍由权限策略拒绝。
-- 修复执行失败只显示 `Invalid params` 这类笼统原因的问题：错误信息现在包含失败的调用与提供方详细原因。
-- Fixed every Grok Build turn failing with `Invalid params` once a reasoning effort was selected: the effort is now sent as the scalar session config value the CLI accepts.
-- Fixed Antigravity CLI attempts aborting because its built-in approval tool was treated as an out-of-scope tool; only genuinely unscoped tools are refused.
-- Fixed Claude Code turns aborting when the CLI adds a native tool: out-of-scope native tools no longer interrupt the turn, and the permission policy still denies their execution.
-- Fixed execution failures reporting only generic reasons such as `Invalid params`; errors now name the rejected call and its provider detail.
-- 修复游戏 Agent 断连或手动中止后残留的 Pending 回合导致后续无法继续，以及 Grok Build / Antigravity CLI 模型配置保存失败的问题；支持在旧 CLI 运行已暂停后切换到其他 CLI，使用原草稿、骰子结果和已确认剧情继续。提供明确放弃未完成回合的入口，不改写已提交人物状态或剧情。
-- Fixed stuck pending Game turns after disconnect or abort and missing Grok Build / Antigravity CLI model settings; suspended external Game turns can resume on another CLI while preserving accepted drafts, dice and committed history, or be explicitly discarded.
-- 修复手动上传安装包后重启安装失败（提示“更新程序未确认接手”）的问题：更新程序改为把输出写入本次更新的日志，不再继承可能已断开的终端输出管道。
-- 修复局域网设备登录后插件、游戏与扩展管理请求全部返回 403 的问题：管理接口改为按操作分级，只读查询与项目配置对已登录的局域网设备开放，启动运行时与安装扩展仍仅限本机，并在界面说明原因。
-- 修复对话输入框的运行时菜单每次打开都重新探测引擎、模型列表必须手动检查才出现，以及临时探测失败会把可用引擎显示为断开的问题；引擎状态与模型目录加入缓存，未知状态自动检查，Grok Build 现在沿用本机 `GROK_CONFIG_PATH` 配置，模型列表更完整。
-- Fixed manual package upgrades failing with "updater did not acknowledge handoff" by writing updater output to the update log instead of inheriting terminal output pipes that may already be closed.
-- Fixed every plugin, game, and extension management request returning 403 after LAN sign-in: management actions are classified per operation, so reads and Project configuration work from authenticated LAN devices while runtime starts and package installs stay host-only and explain the limit.
-- Fixed the conversation runtime menu re-probing engines on every open, model lists appearing only after a manual check, and transient probe failures marking a working engine as disconnected; engine state and model catalogs are cached, unknown states are checked automatically, and Grok Build now follows the host `GROK_CONFIG_PATH` configuration for a complete model list.
+- 修复 Grok Build 与 Antigravity CLI 的运行时问题：Antigravity CLI 因内置工具集整轮失败、Grok Build 偶发响应不匹配、流式中断重试失效、推理强度参数错误、模型配置保存失败，以及 Windows 文件定位误报失败、原文编辑后批注阻断发送。
+- Fixed Grok Build and Antigravity CLI runtime issues: Antigravity CLI turns aborting on its built-in toolset, sporadic Grok Build response mismatches, broken in-stream retries, invalid reasoning-effort parameters, and failed model-settings saves, plus false failures revealing files on Windows and comments blocking messages after source edits.
+- 修复运行时引擎与游戏恢复问题：引擎菜单反复探测、检查后仍报连接失败、游戏断连后回合卡死、会话冷启动校验过严、局域网管理请求 403。
+- Fixed engine availability and game recovery: repeated engine probing, "connection failed" right after a check, stuck Game turns after disconnect, over-strict cold-start checkpoints, and 403 responses for LAN management.
 
 ### Compatibility / 兼容性
 
-- 放弃游戏回合会在故事日志中写入新的 `turn_abandoned` 审计事件；旧版 Denova 可能无法解析已产生此事件的故事文件。降级前请备份工作区。Native 引擎暂不接手 CLI 尚未提交的草稿，请先继续完成或放弃原回合。
-- Discarding a Game turn adds a `turn_abandoned` audit record; older Denova versions may not parse story journals containing this event. Back up the workspace before downgrading. Native cannot yet take over an uncommitted CLI draft.
+- 放弃游戏回合会在故事日志中写入新的 `turn_abandoned` 审计事件；旧版 Denova 可能无法解析已产生此事件的故事文件。降级前请备份工作区。
+- Discarding a Game turn adds a `turn_abandoned` audit record; older Denova versions may not parse story journals containing this event. Back up the workspace before downgrading.
 
 ## [v0.6.2] - 2026-10-19
 
