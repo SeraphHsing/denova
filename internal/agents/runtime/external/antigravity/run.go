@@ -153,7 +153,7 @@ func (c *Client) Run(ctx context.Context, input external.Input, host external.Ho
 	}
 	c.mu.Unlock()
 	if err != nil {
-		return result, fmt.Errorf("start Antigravity attempt: %w", err)
+		return result, classifyAttemptError(fmt.Errorf("start Antigravity attempt: %w", err))
 	}
 	defer func() { c.mu.Lock(); delete(c.active, cmd); c.mu.Unlock() }()
 	waited := false
@@ -196,7 +196,7 @@ func (c *Client) Run(ctx context.Context, input external.Input, host external.Ho
 		return result, ctx.Err()
 	}
 	if err != nil || waitErr != nil {
-		return result, errors.Join(err, waitErr)
+		return result, classifyAttemptError(errors.Join(err, waitErr))
 	}
 	if !output.initialized || !output.terminal {
 		return result, errors.New("Antigravity exited without initialization and a terminal result")

@@ -1,6 +1,7 @@
 package antigravity
 
 import (
+	"fmt"
 	"testing"
 
 	"denova/internal/agents/runtime/external"
@@ -43,6 +44,25 @@ func TestStreamTerminalReconciliationAndProtocolIdentity(t *testing.T) {
 	missing := streamOutput{allowed: map[string]bool{"call_mcp_tool": true}}
 	if err := missing.feed([]byte(`{"event":"init","conversation_id":"conversation-1","init":{"tools":[]}}`), &testHost{}); err == nil {
 		t.Fatal("missing host dispatcher accepted")
+	}
+}
+
+func TestStreamToleratesStepTerminalStates(t *testing.T) {
+	host := &testHost{}
+	output := streamOutput{allowed: map[string]bool{}}
+	if err := output.feed([]byte(`{"event":"init","conversation_id":"conversation-1","init":{"tools":[]}}`), host); err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{"ERROR", "CANCELED", "INTERRUPTED"} {
+		line := fmt.Sprintf(`{"event":"step_update","step_update":{"conversation_id":"conversation-1","step_index":1,"state":%q,"step_type":"agent_response","text_delta":"Partial answer"}}`, state)
+		if err := output.feed([]byte(line), host); err != nil {
+			t.Fatalf("step state %s must not abort the attempt: %v", state, err)
+		}
+	}
+	// An unknown step state stays a protocol error, never a silent skip.
+	unknown := `{"event":"step_update","step_update":{"conversation_id":"conversation-1","step_index":1,"state":"BOGUS","step_type":"agent_response","text_delta":""}}`
+	if err := output.feed([]byte(unknown), host); err == nil {
+		t.Fatal("unknown step state accepted")
 	}
 }
 

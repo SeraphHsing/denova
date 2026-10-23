@@ -99,7 +99,15 @@ func (s *streamOutput) feed(line []byte, host external.Host) error {
 		if !s.initialized || frame.Step.ConversationID != s.result.SessionID {
 			return errors.New("Antigravity step lacks its initialized conversation identity")
 		}
-		if frame.Step.State != "ACTIVE" && frame.Step.State != "DONE" {
+		// ACTIVE and DONE carry agent_response deltas. The CLI also reports a
+		// step-level terminal state before the attempt verdict: a failed or
+		// canceled step is an observation, not the attempt result, so keep
+		// streaming and let the result status decide success or failure.
+		switch frame.Step.State {
+		case "ACTIVE", "DONE":
+		case "ERROR", "CANCELED", "INTERRUPTED":
+			return nil
+		default:
 			return fmt.Errorf("unknown Antigravity step state %q", frame.Step.State)
 		}
 		// Tool events are observations only: MCP is the sole tool execution path.

@@ -10,6 +10,23 @@ Denova records major user-visible features, important compatibility or data chan
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)。
 
+## [Unreleased]
+
+### Brief / 简要说明
+
+#### 中文
+
+- 修复重启后部分写作/聊天会话和游戏分支报「历史记录异常，暂时无法继续」的问题：会话检查点无法自证与日志一致时改为从完整记录重建，不再拒绝该会话。
+
+#### English
+
+- Fixed some Writing/Chat sessions and Game branches reporting "history is invalid" after a restart: when a session checkpoint cannot prove itself consistent with the journal, the transcript is rebuilt from the full record instead of rejecting the conversation.
+
+### Fixed / 修复
+
+- 修复会话检查点校验过严导致重启后会话不可用的问题：检查点只是日志上的缓存，无法匹配时记录原因并从规范日志重建历史，真正损坏的记录仍按原样拒绝。
+- Fixed cold-load checkpoints rejecting usable conversations: a checkpoint is only a cache over the canonical journal, so an unverifiable fingerprint is logged and the transcript is rebuilt, while genuinely invalid records are still rejected.
+
 ## [v0.6.7] - 2026-10-22
 
 ### Brief / 简要说明

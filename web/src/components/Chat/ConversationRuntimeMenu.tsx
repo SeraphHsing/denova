@@ -166,8 +166,9 @@ export function ConversationRuntimeMenu({ controller, runActive, disabled = fals
       <DropdownMenuSubTrigger className="min-w-0 flex-1 cursor-pointer text-xs" disabled={disabled || !controller.initialized}>
         <span className="truncate">{t('agentRuntime.currentRuntime', { runtime: t(`agentRuntime.${current}`) })}</span>
       </DropdownMenuSubTrigger>
-      {/* Narrow screens overlay the parent menu to keep all choices in view. */}
-      <DropdownMenuSubContent avoidCollisions={!narrow} className="max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto w-64 max-w-[calc(100vw-1rem)] border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-1.5 text-[var(--nova-text)] max-[700px]:w-56 max-[700px]:[translate:calc(-1*var(--radix-popper-anchor-width))_0]">
+      {/* The trigger is the menu's last row, so the list grows up from that row
+          instead of running past the bottom of the window. */}
+      <DropdownMenuSubContent align="end" avoidCollisions={!narrow} className="max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto w-64 max-w-[calc(100vw-1rem)] border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-1.5 text-[var(--nova-text)] max-[700px]:w-56 max-[700px]:[translate:calc(-1*var(--radix-popper-anchor-width))_0]">
         <DropdownMenuGroup>
           {choices.map(choice => <div key={choice.kind}>
             {/* A failed defaults write can leave the conversation switched. Allow reselecting it to retry. */}

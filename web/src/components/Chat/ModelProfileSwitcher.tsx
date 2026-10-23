@@ -84,17 +84,10 @@ export function ModelProfileSwitcher({ agentKey, workspace, conversationConfig, 
           navigate()
         }}
       >
-        {conversationConfig && <ConversationRuntimeMenu
-          controller={conversationConfig} runActive={runActive} disabled={disabled} onRuntimeChanged={onRuntimeChanged}
-          configurationDisabled={!navigation}
-          onConfigure={() => {
-            pendingNavigationRef.current = () => navigation?.open({ kind: 'config_resource', resource: 'agent_profile',
-              id: conversationConfig.snapshot?.custom_agent_id || agentKey, scope: 'user', section: 'runtime' })
-            setOpen(false)
-          }}
-        />}
-        <DropdownMenuSeparator />
-        {conversationConfig?.error && <DropdownMenuGroup><DropdownMenuItem disabled={conversationConfig.loading} onSelect={() => void conversationConfig.reload()}>{selector.t('common.retry')}</DropdownMenuItem></DropdownMenuGroup>}
+        {conversationConfig?.error && <>
+          <DropdownMenuGroup><DropdownMenuItem disabled={conversationConfig.loading} onSelect={() => void conversationConfig.reload()}>{selector.t('common.retry')}</DropdownMenuItem></DropdownMenuGroup>
+          <DropdownMenuSeparator />
+        </>}
         {runActive ? (
           <>
             <div role="note" className="px-1.5 py-1 text-[11px] leading-4 text-[var(--nova-text-faint)]">
@@ -110,6 +103,22 @@ export function ModelProfileSwitcher({ agentKey, workspace, conversationConfig, 
             void selector.selectThinkingLevel(level)
           }}
         />
+        {/* The runtime row stays last: this menu opens upward, so only its last
+            row keeps its position when a late engine catalog grows the list
+            above it. A moving trigger row would drag the runtime submenu out
+            from under the pointer and dismiss it. */}
+        {conversationConfig && <>
+          <DropdownMenuSeparator />
+          <ConversationRuntimeMenu
+            controller={conversationConfig} runActive={runActive} disabled={disabled} onRuntimeChanged={onRuntimeChanged}
+            configurationDisabled={!navigation}
+            onConfigure={() => {
+              pendingNavigationRef.current = () => navigation?.open({ kind: 'config_resource', resource: 'agent_profile',
+                id: conversationConfig.snapshot?.custom_agent_id || agentKey, scope: 'user', section: 'runtime' })
+              setOpen(false)
+            }}
+          />
+        </>}
       </DropdownMenuContent>
     </DropdownMenu>
   )
