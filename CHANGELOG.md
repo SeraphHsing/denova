@@ -12,20 +12,39 @@ Denova records major user-visible features, important compatibility or data chan
 
 ## [Unreleased]
 
+## [v0.6.7-b] - 2026-10-23
+
 ### Brief / 简要说明
 
 #### 中文
 
-- 修复重启后部分写作/聊天会话和游戏分支报「历史记录异常，暂时无法继续」的问题：会话检查点无法自证与日志一致时改为从完整记录重建，不再拒绝该会话。
+- 合并上游功能：新增内置互动游戏创作 Skill、可选决策模型、资料正文提及检索与内置网文创作 Skill；修复编辑原文后批注阻断发送、Windows 文件定位误报失败。
 
 #### English
 
-- Fixed some Writing/Chat sessions and Game branches reporting "history is invalid" after a restart: when a session checkpoint cannot prove itself consistent with the journal, the transcript is rebuilt from the full record instead of rejecting the conversation.
+- Merges upstream features: adds a built-in interactive-game design Skill, optional decision models, Lore text-mention search, and a built-in novel-writing Skill; fixes comments blocking messages after source edits and false failures when revealing files on Windows.
+
+### Added / 新增
+
+- 内置互动游戏创作 Skill，支持游戏构思与核心循环、世界与角色资料库、状态系统、规则判定、游戏规划、开局回合和跑团诊断。
+- A built-in interactive-game design Skill covers game premises and loops, world and character Lore, state systems, rules and checks, planning, openings and turns, and play diagnostics.
+- 互动游戏创作 Skill 补充经典网文向的成长体系、爽点结构、资源与社会资本、世界阶梯、副本/规则恐怖/都市隐杀和外观沉浸感设计。
+- The interactive-game design Skill now covers classic web-novel progression, payoff structure, resources and social capital, world tiers, instance/rule-horror/urban-undercover patterns, and sensory immersion.
+- Skills 库新增「游戏」分类，可在创建、配置和筛选中使用。
+- The Skills library adds a Game category for creation, configuration, and filtering.
+- 可选决策模型支持游戏舞台素材选择、资料库语义分类和自动化语义触发，不确定或服务不可用时由语言模型兜底。
+- Optional decision models handle Game stage media, Lore semantic classification, and automation semantic triggers, with language-model fallback for uncertain results or service failures.
+- 资料详情新增「作品提及」：查找作品文件与指定故事分支的正文提及，定位文件或只读查看历史回合。
+- Lore details now find text mentions in project files and a selected story branch, with file navigation and read-only historical narrative.
+- 内置网文创作 Skill，支持构思、大纲、人物与规则设计、章节场景、长篇续航和改稿诊断。
+- A built-in novel-writing Skill supports premises, outlines, characters and rules, scenes, long-form continuity, and revision.
 
 ### Fixed / 修复
 
-- 修复会话检查点校验过严导致重启后会话不可用的问题：检查点只是日志上的缓存，无法匹配时记录原因并从规范日志重建历史，真正损坏的记录仍按原样拒绝。
-- Fixed cold-load checkpoints rejecting usable conversations: a checkpoint is only a cache over the canonical journal, so an unverifiable fingerprint is logged and the transcript is rebuilt, while genuinely invalid records are still rejected.
+- 修复编辑原文后批注阻断消息发送的问题；保留原文引用，并让 Agent 结合当前内容处理。
+- Fixed document comments blocking messages after source edits; original quotes remain available for the Agent to reconcile with current content.
+- 修复 Windows 文件定位已成功打开资源管理器却误报失败的问题。
+- Fixed false failure reports after successfully revealing files in Windows Explorer.
 
 ## [v0.6.7] - 2026-10-22
 
@@ -33,11 +52,13 @@ Denova records major user-visible features, important compatibility or data chan
 
 #### 中文
 
+- 修复重启后部分写作/聊天会话和游戏分支报「历史记录异常，暂时无法继续」的问题：会话检查点无法自证与日志一致时改为从完整记录重建，不再拒绝该会话。
 - 修复 Antigravity CLI 因自身内置工具集导致整轮执行失败，并在受限沙箱内运行该 CLI；Grok Build 改用 CLI 的无头单轮通道，可选到 Grok 4.7 / 4.7-fast，并新增会话级上下文大小。
 - 修复打开模型菜单或切换模型时反复检查引擎可用性的问题：检查改为用户显式触发，已就绪的引擎和模型目录复用缓存，未登录的 Grok Build 显示为需要登录。
 
 #### English
 
+- Fixed some Writing/Chat sessions and Game branches reporting "history is invalid" after a restart: when a session checkpoint cannot prove itself consistent with the journal, the transcript is rebuilt from the full record instead of rejecting the conversation.
 - Fixed Antigravity CLI turns aborting on its own built-in toolset and runs that CLI inside its restricted sandbox; Grok Build now uses the CLI's headless single-turn channel, reaching Grok 4.7 / 4.7-fast and gaining a per-conversation context window.
 - Fixed repeated engine availability checks when opening the model menu or switching models: checks now happen only on explicit user action, ready engines and their model catalogs come from cache, and a signed-out Grok Build reports sign-in required.
 
@@ -59,6 +80,8 @@ Denova records major user-visible features, important compatibility or data chan
 - 修复游戏开场生成失败后「重新生成这一轮」点击无反应的问题：没有已提交回合时会重新发起开场生成。
 - Fixed turns failing immediately when a provider broke a streaming response mid-flight, which bypassed the configured retries: in-stream errors are now classified like provider errors and retried, so game and writing turns continue automatically.
 - Fixed "regenerate this turn" doing nothing after a game opening failed to generate: the opening is now requested again when no turn was committed.
+- 修复会话检查点校验过严导致重启后会话不可用的问题：检查点只是日志上的缓存，无法匹配时记录原因并从规范日志重建历史，真正损坏的记录仍按原样拒绝。
+- Fixed cold-load checkpoints rejecting usable conversations: a checkpoint is only a cache over the canonical journal, so an unverifiable fingerprint is logged and the transcript is rebuilt, while genuinely invalid records are still rejected.
 
 ## [v0.6.6] - 2026-10-21
 
@@ -125,7 +148,6 @@ Denova records major user-visible features, important compatibility or data chan
 - Fixed manual package upgrades failing with "updater did not acknowledge handoff" by writing updater output to the update log instead of inheriting terminal output pipes that may already be closed.
 - Fixed every plugin, game, and extension management request returning 403 after LAN sign-in: management actions are classified per operation, so reads and Project configuration work from authenticated LAN devices while runtime starts and package installs stay host-only and explain the limit.
 - Fixed the conversation runtime menu re-probing engines on every open, model lists appearing only after a manual check, and transient probe failures marking a working engine as disconnected; engine state and model catalogs are cached, unknown states are checked automatically, and Grok Build now follows the host `GROK_CONFIG_PATH` configuration for a complete model list.
-
 ## [v0.6.3] - 2026-10-20
 
 ### Brief / 简要说明
