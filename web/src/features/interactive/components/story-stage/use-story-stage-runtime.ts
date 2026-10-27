@@ -4,7 +4,7 @@ import { createAgentCommandID, type AgentRuntimeQueuedCommand } from '@/lib/api'
 import { localizeAgentRuntimeReason } from '@/lib/agent-runtime-error'
 import type { AgentUIMessage } from '@/lib/agent-ui'
 import { createAgentDataMessage } from '@/lib/agent-ui-message'
-import { agentCommandRetryKey, isKnownAgentCommandOutcome, rememberAgentCommandID } from '@/lib/agent-command'
+import { agentCommandErrorCode, agentCommandRetryKey, isKnownAgentCommandOutcome, rememberAgentCommandID } from '@/lib/agent-command'
 import {
   compactInteractiveContext,
   abandonInteractivePendingTurn,
@@ -208,6 +208,15 @@ export function useStoryStageRuntime({
     } catch (error) {
       if (isKnownAgentCommandOutcome(error)) initialStartCommandIDsRef.current.delete(retryKey)
       handleStreamError(error)
+      if (agentCommandErrorCode(error) === 'agent_runtime.operation_paused') {
+        // The rejected input belongs to a suspended turn: project that pause so
+        // the composer offers its recovery actions instead of another send.
+        try {
+          interactiveAgentCommands.project(await getActiveInteractiveChat(storyId, branchId), 'disconnected')
+        } catch (refreshError) {
+          console.warn('[interactive-stage] Failed to project the paused game turn', refreshError)
+        }
+      }
       finishRun(abortController)
       return false
     }
