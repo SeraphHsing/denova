@@ -59,6 +59,17 @@ func (h *Handlers) HandleSettingsPatch(ctx context.Context, c *app.RequestContex
 		writeErrorKey(c, consts.StatusBadRequest, "api.common.invalidRequestWithDetail", "detail", err.Error())
 		return
 	}
+	// Compare only explicitly changed harmless preferences. Never serialize the
+	// settings object: it also contains credentials and user-authored content.
+	var changed map[string]json.RawMessage
+	_ = json.Unmarshal(body.Changes, &changed)
+	var before config.LayeredSettings
+	var beforeErr error
+	if _, theme := changed["theme"]; theme {
+		before, beforeErr = h.app.SettingsService().Snapshot(settingsTarget(c))
+	} else if _, language := changed["language"]; language {
+		before, beforeErr = h.app.SettingsService().Snapshot(settingsTarget(c))
+	}
 	layered, err := h.app.SettingsService().Patch(settingsTarget(c), layer, body.Changes, body.BaseRevision)
 	if err != nil {
 		if writeSettingsMutationError(c, err) {
@@ -83,6 +94,14 @@ func (h *Handlers) HandleSettingsPatch(ctx context.Context, c *app.RequestContex
 			writeError(c, consts.StatusInternalServerError, err.Error())
 		}
 		return
+	}
+	if beforeErr == nil {
+		if _, ok := changed["theme"]; ok && before.Effective.Theme != layered.Effective.Theme {
+			h.app.Analytics().SettingChanged("theme", layered.Effective.Theme)
+		}
+		if _, ok := changed["language"]; ok && before.Effective.Language != layered.Effective.Language {
+			h.app.Analytics().SettingChanged("language", layered.Effective.Language)
+		}
 	}
 	writeSettingsSnapshot(c, layered)
 }

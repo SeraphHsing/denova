@@ -1,5 +1,5 @@
-// Package analytics owns optional, content-free product usage statistics. It
-// accepts only bounded product categories, never domain records or model data.
+// Package analytics owns optional, content-free product usage statistics.
+// Callers supply closed categories, never creative content or raw diagnostics.
 package analytics
 
 import (
@@ -64,8 +64,9 @@ const (
 	VersionRestored Action = "version_restored"
 )
 
-// Run captures the collection generation at admission. Disabling statistics
-// invalidates this handle, including when collection is enabled again later.
+// Run represents one admitted execution, not an internal model/tool round.
+// Finish and Fail are mutually exclusive and idempotent. Opt-out invalidates
+// existing handles, including after collection is enabled again.
 type Run struct {
 	service    *Service
 	generation uint64
@@ -73,6 +74,7 @@ type Run struct {
 	engine     Engine
 	trigger    Trigger
 	started    time.Time
+	id         string
 	once       *sync.Once
 }
 
@@ -82,38 +84,49 @@ func (r Run) Finish(result Result) {
 	}
 	switch result {
 	case Success, Failure, Cancelled, Suspended, Preempted:
-	default:
+		r.once.Do(func() { r.service.recordRun(r, result, "") })
+	}
+}
+
+// Fail classifies a local error without serializing its message or stack.
+func (r Run) Fail(err error) {
+	if r.service == nil {
 		return
 	}
-	r.once.Do(func() { r.service.recordRun(r, result) })
+	r.once.Do(func() { r.service.recordRun(r, Failure, classifyError(err)) })
 }
 
+// event is PostHog's public capture protocol. No management credential is used.
 type event struct {
-	Type    string  `json:"type"`
-	Payload payload `json:"payload"`
+	APIKey     string    `json:"api_key"`
+	Event      string    `json:"event"`
+	DistinctID string    `json:"distinct_id"`
+	Timestamp  time.Time `json:"timestamp"`
+	Properties eventData `json:"properties"`
 }
 
-// Only this private, explicitly constructed schema crosses the network.
-type payload struct {
-	Website   string    `json:"website"`
-	Hostname  string    `json:"hostname"`
-	Tag       string    `json:"tag"`
-	ID        string    `json:"id"`
-	URL       string    `json:"url"`
-	Name      string    `json:"name"`
-	Timestamp int64     `json:"timestamp"`
-	Data      eventData `json:"data"`
-}
-
+// Only explicitly constructed properties cross the network. Settings values
+// and error codes are validated enums; arbitrary objects are never accepted.
 type eventData struct {
-	Version    string  `json:"version,omitempty"`
-	Platform   string  `json:"platform,omitempty"`
-	CohortDate string  `json:"cohort_date,omitempty"`
-	Feature    Feature `json:"feature,omitempty"`
-	Runtime    Engine  `json:"runtime,omitempty"`
-	Trigger    Trigger `json:"trigger,omitempty"`
-	Outcome    Result  `json:"outcome,omitempty"`
-	// Non-execution events omit duration; executions retain a measured zero.
-	DurationMS *int64 `json:"duration_ms,omitempty"`
-	Action     Action `json:"action,omitempty"`
+	AppVersion      string      `json:"app_version"`
+	OS              string      `json:"os"`
+	Source          string      `json:"source"`
+	SchemaVersion   int         `json:"schema_version"`
+	CohortDate      string      `json:"cohort_date,omitempty"`
+	FirstSeenDate   string      `json:"first_seen_date,omitempty"`
+	CohortOrigin    string      `json:"cohort_origin,omitempty"`
+	FirstAppVersion string      `json:"first_app_version,omitempty"`
+	Feature         Feature     `json:"feature_name,omitempty"`
+	Operation       string      `json:"operation,omitempty"`
+	Runtime         Engine      `json:"runtime,omitempty"`
+	Trigger         Trigger     `json:"trigger,omitempty"`
+	Outcome         Result      `json:"outcome,omitempty"`
+	DurationMS      *int64      `json:"duration_ms,omitempty"`
+	RunID           string      `json:"run_id,omitempty"`
+	Action          Action      `json:"action,omitempty"`
+	ErrorCode       ErrorCode   `json:"error_code,omitempty"`
+	ErrorSource     ErrorSource `json:"error_source,omitempty"`
+	StatusCode      int         `json:"status_code,omitempty"`
+	SettingName     string      `json:"setting_name,omitempty"`
+	SettingValue    string      `json:"value,omitempty"`
 }

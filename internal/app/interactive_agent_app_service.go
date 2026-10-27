@@ -176,7 +176,7 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, reques
 		usageRun := a.Analytics().BeginRun(analytics.Game, analyticsEngine(cycle.runtimeCfg), analytics.User)
 		slog.InfoContext(ctx, fmt.Sprintf("[interactive-agent-task] run begin id=%s command_id=%s story_id=%s branch_id=%s rewind_turn_id=%s message_len=%d style_scenes=%d", task.ID(), identity.request.CommandID, cycle.storyID, cycle.branchID, identity.request.RegenerateFromTurnID, len(identity.request.Message), len(identity.request.StyleScenes)))
 		outcome := accepted.Wait(ctx)
-		finishAnalyticsRun(usageRun, outcome.Status)
+		finishAnalyticsRun(usageRun, outcome)
 		slog.InfoContext(ctx, fmt.Sprintf("[interactive-agent-task] run end id=%s command_id=%s outcome=%s status=%s", task.ID(), identity.request.CommandID, outcome.Status, task.Status()))
 	}
 	task, err := apptask.NewDeferredWithContext(ctx, func(task *apptask.Task) error {

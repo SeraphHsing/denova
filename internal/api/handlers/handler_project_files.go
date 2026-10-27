@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"denova/internal/analytics"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 
 	projectfilesapp "denova/internal/app/projectfiles"
+	projectdomain "denova/internal/project"
 	workspacechange "denova/internal/workspace/change"
 )
 
@@ -124,8 +124,8 @@ func (h *Handlers) HandleProjectFileSave(ctx context.Context, c *app.RequestCont
 		writeProjectFilesError(c, err, "api.projectFiles.saveFailed")
 		return
 	}
-	if result.Changed {
-		h.app.Analytics().Activity(analytics.Writing)
+	if result.Changed && scope.Type == projectdomain.TypeBook && strings.HasPrefix(result.Path, "chapters/") && strings.HasSuffix(strings.ToLower(result.Path), ".md") {
+		h.app.Analytics().ContentEdited()
 	}
 	writeJSON(c, consts.StatusOK, map[string]any{
 		"project_id": result.ProjectID,

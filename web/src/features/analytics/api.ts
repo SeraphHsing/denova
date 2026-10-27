@@ -19,6 +19,25 @@ export async function setAnalyticsEnabled(enabled: boolean) {
 // event details never enter this request.
 export function recordActivity(feature: AnalyticsFeature) {
   return requestJSON('/api/analytics/activity', {
+    suppressBackendUnavailableToast: true,
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feature }),
+  })
+}
+
+export function recordAppOpened() {
+  return requestJSON('/api/analytics/open', {
+    suppressBackendUnavailableToast: true,
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  })
+}
+
+export type AnalyticsClientError = 'react_error' | 'window_error' | 'unhandled_rejection' | 'white_screen' | 'startup'
+
+// The error object deliberately never enters this boundary. Full diagnostics
+// stay in local runtime logs; cloud analytics receives a fixed failure kind.
+export function reportClientError(code: AnalyticsClientError) {
+  return requestJSON('/api/analytics/error', {
+    suppressBackendUnavailableToast: true,
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error_code: code }),
   })
 }

@@ -1,5 +1,6 @@
 import { toast } from '@/lib/toast'
 import { errorMessage } from '@/lib/error-diagnostics'
+import { reportClientError } from '@/features/analytics/api'
 
 const RUNTIME_LOG_KEY = 'nova.runtime.logs'
 const MAX_LOGS = 80
@@ -19,6 +20,8 @@ export interface RuntimeLogEntry {
 
 /** 记录前端运行时异常，写入控制台和 localStorage，便于排查崩溃/白屏原因。 */
 export function recordRuntimeLog(entry: Omit<RuntimeLogEntry, 'url' | 'userAgent' | 'timestamp'>) {
+  // Telemetry failures must not recursively create more runtime errors.
+  void reportClientError(entry.type).catch(() => {})
   const fullEntry: RuntimeLogEntry = {
     ...entry,
     url: window.location.href,

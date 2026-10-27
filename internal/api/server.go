@@ -67,6 +67,7 @@ func newServer(application *app.App, port string, listener net.Listener) *Server
 	h.Use(corsMiddleware)
 	accessGate := newRemoteAccessGate(application.RemoteAccessConfig, port)
 	h.Use(accessGate.middleware)
+	h.Use(analyticsMiddleware(application))
 	accessGate.registerRoutes(h)
 	// The gzip middleware buffers body streams before compressing them. Exclude
 	// every SSE route at the server boundary so browsers can consume events as

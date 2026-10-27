@@ -1,7 +1,10 @@
 package analytics
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +16,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/alfredxw/denova/agent/model/providers"
+	"github.com/google/uuid"
 )
 
 type collector struct {
@@ -25,8 +31,8 @@ func openCollector(t *testing.T, path string) (*Service, *collector) {
 	t.Helper()
 	c := &collector{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("User-Agent") != "Mozilla/5.0 Denova/1.0" {
-			t.Errorf("unexpected user agent")
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Error("missing JSON content type")
 		}
 		var raw json.RawMessage
 		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
@@ -40,23 +46,21 @@ func openCollector(t *testing.T, path string) (*Service, *collector) {
 		c.events = append(c.events, e)
 		c.bodies = append(c.bodies, string(raw))
 		c.mu.Unlock()
-		_, _ = w.Write([]byte(`{"cache":"test-receipt","sessionId":"test-session"}`))
+		_, _ = w.Write([]byte(`{"status":"Ok"}`))
 	}))
 	t.Cleanup(server.Close)
-	s, err := Open(Options{Version: "0.6.0", StatePath: path, Endpoint: server.URL})
+	s, err := Open(Options{Version: "0.6.3", StatePath: path, Endpoint: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
 	return s, c
 }
-
 func (c *collector) snapshot() []event {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return slices.Clone(c.events)
 }
-
 func awaitEvents(t *testing.T, c *collector, count int) []event {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -69,184 +73,224 @@ func awaitEvents(t *testing.T, c *collector, count int) []event {
 	t.Fatalf("expected %d events, received %d", count, len(c.snapshot()))
 	return nil
 }
+func eventsNamed(events []event, name string) []event {
+	var found []event
+	for _, e := range events {
+		if e.Event == name {
+			found = append(found, e)
+		}
+	}
+	return found
+}
 
-func TestNoticeDefaultAndHostWideActivityDeduplication(t *testing.T) {
+func TestPostHogConsentProtocolAndActivityCounts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "analytics.json")
 	s, c := openCollector(t, path)
-	if got := s.Preferences(); got != (Preferences{Enabled: true, Available: true}) {
-		t.Fatalf("preferences=%+v", got)
-	}
+	s.Opened()
 	s.Activity(Writing)
 	if len(c.snapshot()) != 0 || len(s.queue) != 0 {
-		t.Fatal("collected before the notice")
+		t.Fatal("collected before acknowledgement")
 	}
 	if _, err := s.SetEnabled(true); err != nil {
 		t.Fatal(err)
 	}
-	for range 3 {
-		s.Activity(Writing)
-		s.Activity(Game)
-	}
-	events := awaitEvents(t, c, 6)
-	wantNames := []string{"app.first_active", "app.active_day", "app.active_week", "app.active_month", "app.feature_active", "app.feature_active"}
-	for i, e := range events {
-		if e.Payload.Name != wantNames[i] {
-			t.Fatalf("events=%+v", events)
-		}
-		if e.Payload.Data.Version != "0.6.0" || e.Payload.Data.Platform != runtime.GOOS {
-			t.Fatalf("missing event metadata: %+v", e.Payload)
-		}
-		if e.Payload.Website != WebsiteID || e.Payload.Tag != "app" || e.Payload.Hostname != "app.denova-ai.com" || !strings.HasPrefix(e.Payload.ID, "app_") {
-			t.Fatalf("payload=%+v", e.Payload)
-		}
-		if e.Payload.URL != "/app/writing" && e.Payload.URL != "/app/game" {
-			t.Fatalf("unsafe URL=%s", e.Payload.URL)
+	s.Opened()
+	s.Opened()
+	s.Activity(Writing)
+	s.Activity(Writing)
+	s.Activity(Game)
+	events := awaitEvents(t, c, 9)
+	for name, count := range map[string]int{"app_first_seen": 1, "app_opened": 1, "app_first_active": 1, "app_active_day": 1, "feature_active": 2, "feature_used": 3} {
+		if got := len(eventsNamed(events, name)); got != count {
+			t.Fatalf("%s count=%d; events=%+v", name, got, events)
 		}
 	}
-	id := events[0].Payload.ID
+	for _, e := range events {
+		if e.APIKey != projectToken || !strings.HasPrefix(e.DistinctID, "app_") || e.Timestamp.IsZero() {
+			t.Fatalf("invalid capture: %+v", e)
+		}
+		if e.Properties.AppVersion != "0.6.3" || e.Properties.OS != runtime.GOOS || e.Properties.Source != "app" || e.Properties.SchemaVersion != 2 {
+			t.Fatalf("invalid properties: %+v", e.Properties)
+		}
+		var raw map[string]any
+		body, _ := json.Marshal(e)
+		_ = json.Unmarshal(body, &raw)
+		if len(raw) != 5 {
+			t.Fatalf("unexpected envelope: %s", body)
+		}
+	}
+	id := s.state.ID
 	s.Close()
 	restored, c2 := openCollector(t, path)
-	if restored.state.ID != id {
-		t.Fatal("identity changed across restart")
-	}
+	restored.Opened()
 	restored.Activity(Writing)
-	restored.Activity(Game)
-	if len(restored.queue) != 0 || len(c2.snapshot()) != 0 {
-		t.Fatal("restart duplicated activity")
+	restarted := awaitEvents(t, c2, 2)
+	if restored.state.ID != id || len(eventsNamed(restarted, "app_first_seen")) != 0 || len(eventsNamed(restarted, "feature_active")) != 0 || len(eventsNamed(restarted, "app_active_day")) != 0 {
+		t.Fatalf("restart changed identity or duplicated daily counters: %+v", restarted)
 	}
 }
 
-func TestCalendarActivityAndExactRetention(t *testing.T) {
-	s, c := openCollector(t, filepath.Join(t.TempDir(), "analytics.json"))
-	if _, err := s.SetEnabled(true); err != nil {
-		t.Fatal(err)
+func TestMigrationPreservesIdentityConsentAndCohort(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "analytics.json")
+			identity := "app_" + uuid.NewString()
+			first := "2026-10-18"
+			legacy := state{Format: 1, ID: identity, Enabled: enabled, NoticeSeen: true, FirstActive: first, Day: time.Now().UTC().Format("2006-01-02"), Features: []Feature{Writing}, Week: "2026-W43", Month: "2026-10", Retention: []int{1}}
+			if err := saveState(path, legacy); err != nil {
+				t.Fatal(err)
+			}
+			s, c := openCollector(t, path)
+			s.Activity(Writing)
+			if !enabled {
+				if len(s.queue) != 0 || len(c.snapshot()) != 0 {
+					t.Fatal("disabled migration collected")
+				}
+				return
+			}
+			if s.Preferences().NoticeSeen || len(s.queue) != 0 || len(c.snapshot()) != 0 {
+				t.Fatal("migration sent before acknowledging the new collector")
+			}
+			if _, err := s.SetEnabled(true); err != nil {
+				t.Fatal(err)
+			}
+			s.Activity(Writing)
+			events := awaitEvents(t, c, 4)
+			for _, e := range events {
+				if e.DistinctID != identity || e.Properties.CohortDate != first || e.Properties.CohortOrigin != "migrated" || e.Properties.FirstAppVersion != "unknown" {
+					t.Fatalf("migration changed cohort: %+v", e)
+				}
+			}
+			if len(eventsNamed(events, "app_first_active")) != 0 {
+				t.Fatal("existing instance counted as new")
+			}
+		})
 	}
+}
+
+func TestUTCDailyActivityAndCoreValueHaveIndependentDefinitions(t *testing.T) {
+	s, c := openCollector(t, filepath.Join(t.TempDir(), "analytics.json"))
+	_, _ = s.SetEnabled(true)
 	first := time.Date(2026, 12, 31, 23, 59, 0, 0, time.UTC)
-	for _, days := range []int{0, 1, 1, 6, 7, 7, 8, 30, 30, 31} {
-		s.mu.Lock()
-		s.activityLocked(Writing, first.AddDate(0, 0, days))
-		s.mu.Unlock()
-	}
-	// An event after all date mutations is a queue ordering barrier.
 	s.mu.Lock()
-	s.enqueueLocked(s.newEvent("app.action_completed", Projects, eventData{Action: BookCreated}, first))
+	for _, day := range []int{0, 0, 1, 7, 30} {
+		s.trackUseLocked(Writing, eventData{Operation: "read", Trigger: User}, first.AddDate(0, 0, day))
+	}
 	s.mu.Unlock()
-	deadline := time.Now().Add(2 * time.Second)
-	var events []event
-	for time.Now().Before(deadline) {
-		events = c.snapshot()
-		if len(events) > 0 && events[len(events)-1].Payload.Name == "app.action_completed" {
-			break
-		}
-		time.Sleep(time.Millisecond)
+	events := awaitEvents(t, c, 15)
+	if len(eventsNamed(events, "app_active_day")) != 4 || len(eventsNamed(events, "feature_used")) != 5 || len(eventsNamed(events, "app_activated")) != 0 {
+		t.Fatalf("invalid activity counts: %+v", events)
 	}
-	counts := map[string]int{}
+	s.ContentEdited()
+	s.ContentEdited()
+	events = awaitEvents(t, c, 21)
+	if len(eventsNamed(events, "app_activated")) != 1 || len(eventsNamed(events, "core_active_day")) != 1 {
+		t.Fatal("edits did not produce deduplicated value metrics")
+	}
+}
+
+func TestRunStartAndTerminalEventsPairAndDoNotUploadErrorText(t *testing.T) {
+	s, c := openCollector(t, filepath.Join(t.TempDir(), "analytics.json"))
+	_, _ = s.SetEnabled(true)
+	run := s.BeginRun(Writing, Native, User)
+	run.Fail(fmt.Errorf("wrapped: %w", &providers.APIError{StatusCode: 429, Message: "private manuscript secret-api-key https://private.example"}))
+	run.Finish(Success)
+	events := awaitEvents(t, c, 6)
+	starts := eventsNamed(events, "feature_used")
+	ends := eventsNamed(events, "feature_failed")
+	if len(starts) != 1 || len(ends) != 1 || starts[0].Properties.RunID == "" || starts[0].Properties.RunID != ends[0].Properties.RunID {
+		t.Fatalf("unpaired execution: %+v", events)
+	}
+	if ends[0].Properties.ErrorCode != ErrorRateLimit || ends[0].Properties.DurationMS == nil {
+		t.Fatal("missing failure classification/duration")
+	}
 	for _, e := range events {
-		counts[e.Payload.Name]++
-		if e.Payload.Data.Version != "0.6.0" || e.Payload.Data.Platform != runtime.GOOS {
-			t.Fatalf("missing event metadata: %+v", e.Payload)
-		}
-		if strings.HasPrefix(e.Payload.Name, "app.retained_") && e.Payload.Data.CohortDate != "2026-12-31" {
-			t.Fatalf("cohort=%s", e.Payload.Data.CohortDate)
+		body, _ := json.Marshal(e)
+		if strings.Contains(string(body), "private") || strings.Contains(string(body), "secret-api-key") {
+			t.Fatal("raw error crossed exporter")
 		}
 	}
-	for _, name := range []string{"app.first_active", "app.retained_d1", "app.retained_d7", "app.retained_d30"} {
-		if counts[name] != 1 {
-			t.Fatalf("%s count=%d; all=%v", name, counts[name], counts)
-		}
-	}
-	if counts["app.active_day"] != 7 || counts["app.active_week"] != 3 || counts["app.active_month"] != 2 {
-		t.Fatalf("calendar counts=%v", counts)
+	if len(eventsNamed(events, "app_activated")) != 0 {
+		t.Fatal("failed run counted as activation")
 	}
 }
 
-func TestCompletedActionsReportTheirActualScope(t *testing.T) {
+func TestAutomationsAndInterruptedRunsDoNotInflateActiveOrSuccess(t *testing.T) {
 	s, c := openCollector(t, filepath.Join(t.TempDir(), "analytics.json"))
-	if _, err := s.SetEnabled(true); err != nil {
-		t.Fatal(err)
+	_, _ = s.SetEnabled(true)
+	scheduled := s.BeginRun(Automation, Codex, Scheduled)
+	scheduled.started = time.Now().Add(-25 * time.Hour)
+	scheduled.Finish(Success)
+	events := awaitEvents(t, c, 2)
+	if events[1].Properties.DurationMS == nil || *events[1].Properties.DurationMS < 25*time.Hour.Milliseconds() || s.state.FirstActive != "" || s.state.PostHogSeen != "" {
+		t.Fatalf("automation inflated activity: %+v", events)
 	}
-	s.ActionCompleted(BookCreated)
-	s.ActionCompleted(ContentExported)
-	s.ActionCompleted(VersionRestored)
-	var actions []string
-	for _, e := range awaitEvents(t, c, 10) {
-		if e.Payload.Name == "app.action_completed" {
-			actions = append(actions, string(e.Payload.Data.Action)+":"+e.Payload.URL)
-		}
+	for _, result := range []Result{Cancelled, Suspended, Preempted} {
+		s.BeginRun(Game, Claude, User).Finish(result)
 	}
-	want := []string{"book_created:/app/projects", "content_exported:/app/writing", "version_restored:/app/versions"}
-	if !slices.Equal(actions, want) {
-		t.Fatalf("actions=%v, want %v", actions, want)
+	events = awaitEvents(t, c, 12)
+	if len(eventsNamed(events, "feature_ended")) != 3 || len(eventsNamed(events, "feature_failed")) != 0 || len(eventsNamed(events, "app_activated")) != 0 {
+		t.Fatalf("interruption counted as success/failure: %+v", events)
 	}
 }
 
-func TestRunPayloadRecordsNumericMillisecondsIncludingZero(t *testing.T) {
+func TestSuccessfulRunsActivateEachFeatureOnce(t *testing.T) {
 	s, c := openCollector(t, filepath.Join(t.TempDir(), "analytics.json"))
-	if _, err := s.SetEnabled(true); err != nil {
+	_, _ = s.SetEnabled(true)
+	for _, feature := range []Feature{Writing, Writing, Game} {
+		s.BeginRun(feature, Native, User).Finish(Success)
+	}
+	events := awaitEvents(t, c, 15)
+	if len(eventsNamed(events, "feature_completed")) != 3 || len(eventsNamed(events, "app_activated")) != 2 || len(eventsNamed(events, "core_active_day")) != 2 {
+		t.Fatalf("invalid successful work metrics: %+v", events)
+	}
+	var value eventData
+	if err := json.Unmarshal([]byte(`{"duration_ms":0}`), &value); err != nil {
 		t.Fatal(err)
 	}
-	for i, duration := range []time.Duration{42 * time.Millisecond, 6 * time.Minute, 25 * time.Hour} {
-		run := s.BeginRun(Automation, Codex, Scheduled)
-		run.started = time.Now().Add(-duration)
-		run.Finish(Success)
-		elapsed := time.Since(run.started).Milliseconds()
-		e := awaitEvents(t, c, i+1)[i]
-		var data map[string]any
-		encoded, err := json.Marshal(e.Payload.Data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(encoded, &data); err != nil {
-			t.Fatal(err)
-		}
-		ms, ok := data["duration_ms"].(float64)
-		if !ok || ms < float64(duration.Milliseconds()) || ms > float64(elapsed) {
-			t.Fatalf("invalid execution duration: %s", encoded)
-		}
-		delete(data, "duration_ms")
-		want := map[string]any{"version": "0.6.0", "platform": runtime.GOOS, "feature": "automation", "runtime": "codex", "trigger": "automation", "outcome": "success"}
-		if !reflect.DeepEqual(data, want) {
-			t.Fatalf("unexpected execution fields: %s", encoded)
-		}
-	}
-	// An execution shorter than one millisecond must still include its duration.
-	var zero eventData
-	if err := json.Unmarshal([]byte(`{"duration_ms":0}`), &zero); err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := json.Marshal(zero)
-	if err != nil || string(encoded) != `{"duration_ms":0}` {
-		t.Fatalf("zero duration was omitted: %s, error=%v", encoded, err)
+	raw, _ := json.Marshal(value)
+	if !strings.Contains(string(raw), `"duration_ms":0`) {
+		t.Fatal("zero duration omitted")
 	}
 }
 
-func TestBackgroundRunsDoNotCreateUserActivityAndHaveBoundedPayloads(t *testing.T) {
+func TestSettingsAndClientErrorsHaveClosedPayloads(t *testing.T) {
 	s, c := openCollector(t, filepath.Join(t.TempDir(), "analytics.json"))
-	if _, err := s.SetEnabled(true); err != nil {
-		t.Fatal(err)
+	_, _ = s.SetEnabled(true)
+	s.SettingChanged("api_key", "private")
+	s.SettingChanged("theme", "private")
+	s.ClientError("private")
+	if len(s.queue) != 0 || len(c.snapshot()) != 0 {
+		t.Fatal("unapproved properties admitted")
 	}
-	run := s.BeginRun(Automation, Native, Scheduled)
-	run.Finish(Failure)
-	run.Finish(Failure)
-	events := awaitEvents(t, c, 1)
-	if len(events) != 1 || len(s.queue) != 0 {
-		t.Fatal("duplicate run result")
+	s.SettingChanged("theme", "dark")
+	s.ClientError(ErrorRender)
+	s.APIError(Game, 503)
+	s.RecoveredPanic()
+	events := awaitEvents(t, c, 4)
+	want := eventData{AppVersion: "0.6.3", OS: runtime.GOOS, Source: "app", SchemaVersion: 2, SettingName: "theme", SettingValue: "dark"}
+	if !reflect.DeepEqual(events[0].Properties, want) {
+		t.Fatalf("settings leaked data: %+v", events[0])
 	}
-	want := eventData{Version: "0.6.0", Platform: runtime.GOOS, Feature: Automation, Runtime: Native, Trigger: Scheduled, Outcome: Failure, DurationMS: events[0].Payload.Data.DurationMS}
-	if events[0].Payload.Data != want || events[0].Payload.Name != "app.run_finished" || s.state.FirstActive != "" {
-		t.Fatalf("events=%+v; state=%+v", events, s.state)
+	if events[1].Properties.ErrorSource != Frontend || events[2].Properties.StatusCode != 503 || events[3].Properties.ErrorCode != ErrorPanic {
+		t.Fatalf("missing error context: %+v", events)
 	}
-	var payload map[string]json.RawMessage
-	encoded, _ := json.Marshal(events[0].Payload)
-	if err := json.Unmarshal(encoded, &payload); err != nil {
-		t.Fatal(err)
+	if s.state.FirstActive != "" {
+		t.Fatal("diagnostics inflated activity")
 	}
-	if len(payload) != 8 {
-		t.Fatalf("unapproved payload keys=%s", encoded)
-	}
-	for _, key := range []string{"website", "hostname", "tag", "id", "url", "name", "timestamp", "data"} {
-		if _, ok := payload[key]; !ok {
-			t.Fatalf("missing %s", key)
+}
+
+func TestErrorClassificationUsesStructuredErrors(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want ErrorCode
+	}{
+		{context.DeadlineExceeded, ErrorTimeout}, {context.Canceled, ErrorCancelled}, {os.ErrPermission, ErrorPermission}, {os.ErrNotExist, ErrorNotFound},
+		{&providers.APIError{StatusCode: 401}, ErrorAuthentication}, {&providers.APIError{StatusCode: 503}, ErrorProvider},
+		{&providers.APIError{StatusCode: 400}, ErrorInvalidRequest}, {errors.New("401 private error"), ErrorUnknown},
+	} {
+		if got := classifyError(tc.err); got != tc.want {
+			t.Fatalf("classification=%s, want %s", got, tc.want)
 		}
 	}
 }

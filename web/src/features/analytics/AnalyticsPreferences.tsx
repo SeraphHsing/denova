@@ -5,13 +5,18 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/lib/toast'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ANALYTICS_PREFERENCES_CHANGED, fetchAnalyticsPreferences, setAnalyticsEnabled, type AnalyticsPreferences } from './api'
+import { ANALYTICS_PREFERENCES_CHANGED, fetchAnalyticsPreferences, recordAppOpened, setAnalyticsEnabled, type AnalyticsPreferences } from './api'
 
 function useAnalyticsPreferences() {
   const { t } = useTranslation()
   const [preferences, setPreferences] = useState<AnalyticsPreferences | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
+  useEffect(() => {
+    if (preferences?.available && preferences.enabled && preferences.notice_seen) {
+      void recordAppOpened().catch(cause => console.warn('[analytics] Failed to record the application opening', cause))
+    }
+  }, [preferences?.available, preferences?.enabled, preferences?.notice_seen])
   useEffect(() => {
     let active = true
     void fetchAnalyticsPreferences().then(value => { if (active) setPreferences(value) })
