@@ -12,12 +12,14 @@ export interface UsageTotals {
   duration_ms: number
   ttft_ms: number
   ttft_requests: number
+  latency_p50_ms: number | null
+  latency_p95_ms: number | null
 }
 
 export interface StatisticsReport {
   projects: Array<{ id: string; name: string }>
   game: {
-    stories: Array<{ id: string; project_id: string; name: string; turns: number }>
+    stories: Array<{ id: string; project_id: string; name: string; turns: number; active_days: number; last_active_date: string; new_branches: number }>
     days: Array<{ date: string; turns: number }>
     new_branches: number
   }

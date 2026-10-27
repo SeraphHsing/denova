@@ -13,22 +13,24 @@ import { getStatistics } from './api'
 import { WritingStatistics } from './WritingStatistics'
 import { ModelStatistics } from './ModelStatistics'
 import { GameStatistics } from './GameStatistics'
+import { GLOBAL_SETTINGS_TARGET, settingsQueryOptions } from '@/features/settings/query'
+import { requestSettingsSection } from '@/features/onboarding/events'
 
-// Intent: creators review saved output and model consumption without leaving
-// their active work. Hierarchy: one dominant trend, then quiet distributions.
-// Palette/surfaces: existing neutral workbench tokens; red/green encode changes.
-// Depth: existing Card borders. Type: existing Inter, 14px labels and 24px values.
-// Spacing: 4px rhythm, 16px control groups, 24px between chart panels.
+// Shared filters preserve the active Project; summaries lead to compact trends
+// and comparable rows, using the same hierarchy for Writing, Game, and models.
 export function StatisticsPage({ visible }: { visible: boolean }) {
   const { t } = useTranslation()
   const [project, setProject] = useState('all')
   const [days, setDays] = useState('7')
   const [tab, setTab] = useState('writing')
+  const settings = useQuery(settingsQueryOptions(GLOBAL_SETTINGS_TARGET))
+  const enabled = settings.isSuccess && settings.data.effective.statistics_enabled !== false
   const query = useQuery({
     queryKey: ['statistics', project, days],
     queryFn: ({ signal }) => getStatistics(project === 'all' ? '' : project, Number(days), signal),
-    enabled: visible,
-    refetchInterval: visible ? 30_000 : false,
+    enabled: visible && enabled,
+    staleTime: 0,
+    refetchInterval: visible && enabled ? 30_000 : false,
     placeholderData: keepPreviousData,
   })
 
@@ -36,10 +38,21 @@ export function StatisticsPage({ visible }: { visible: boolean }) {
   // measurable viewport and must release their ResizeObservers.
   if (!visible) return null
 
+  if (!enabled) return (
+    <ResourceWorkspace title={t('statistics.title')} className="h-full min-h-0">
+      {settings.isPending ? <LoadingState label={t('statistics.loading')} variant="panel" /> : (
+        <Empty>
+          <EmptyHeader><EmptyMedia variant="icon"><BarChart3 /></EmptyMedia><EmptyTitle>{t(settings.isError ? 'statistics.loadFailed' : 'statistics.disabled')}</EmptyTitle></EmptyHeader>
+          <Button variant="outline" onClick={() => requestSettingsSection('general')}>{t('statistics.openSettings')}</Button>
+        </Empty>
+      )}
+    </ResourceWorkspace>
+  )
+
   return (
     <ResourceWorkspace title={t('statistics.title')} className="h-full min-h-0" mainClassName="min-h-0 min-w-0">
       <div className="h-full overflow-auto" data-testid="statistics-page">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-4 sm:p-5">
           <header className="flex flex-wrap items-center justify-between gap-3">
             <h1 className="hidden text-xl font-semibold tracking-tight sm:block">{t('statistics.title')}</h1>
             <div className="flex flex-wrap items-center gap-2">
@@ -72,7 +85,7 @@ export function StatisticsPage({ visible }: { visible: boolean }) {
                 <TabsTrigger value="models">{t('statistics.models')}</TabsTrigger>
               </TabsList>
               <TabsContent value="writing" className="pt-4"><WritingStatistics data={query.data.writing} /></TabsContent>
-              <TabsContent value="game" className="pt-4"><GameStatistics data={query.data.game} /></TabsContent>
+              <TabsContent value="game" className="pt-4"><GameStatistics data={query.data.game} projects={query.data.projects} /></TabsContent>
               <TabsContent value="models" className="pt-4"><ModelStatistics data={query.data.usage} /></TabsContent>
             </Tabs>
           ) : <Empty><EmptyHeader><EmptyTitle>{t('statistics.empty')}</EmptyTitle><EmptyDescription>{t('statistics.newRecords')}</EmptyDescription></EmptyHeader></Empty>}

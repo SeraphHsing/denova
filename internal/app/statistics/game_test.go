@@ -67,6 +67,9 @@ func TestGameStatisticsProjectScopePreviewAndPartialSources(t *testing.T) {
 			t.Fatalf("game report = %+v, issues=%d", report.Game, report.Issues)
 		}
 		for _, story := range report.Game.Stories {
+			if story.ActiveDays != 1 || story.LastActiveDate != time.Now().In(location).Format(time.DateOnly) || story.NewBranches != 1 {
+				t.Fatalf("story activity = %+v", story)
+			}
 			if id != "" && story.ProjectID != id {
 				t.Fatalf("cross-project story = %+v", story)
 			}

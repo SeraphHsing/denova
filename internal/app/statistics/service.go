@@ -34,17 +34,6 @@ type WritingDay struct {
 	Delta *int64 `json:"delta"`
 }
 
-type UsageDay struct {
-	Date string `json:"date"`
-	stats.Totals
-}
-
-type Model struct {
-	Name    string `json:"name"`
-	Runtime string `json:"runtime"`
-	stats.Totals
-}
-
 type Report struct {
 	Projects []Project  `json:"projects"`
 	Game     GameReport `json:"game"`
@@ -53,7 +42,7 @@ type Report struct {
 		Days     []WritingDay     `json:"days"`
 	} `json:"writing"`
 	Usage struct {
-		Totals stats.Totals `json:"totals"`
+		Totals UsageSummary `json:"totals"`
 		Days   []UsageDay   `json:"days"`
 		Models []Model      `json:"models"`
 	} `json:"usage"`
@@ -78,6 +67,8 @@ type Service struct {
 
 type observationMode uint8
 
+var ErrDisabled = errors.New("local statistics are disabled")
+
 const (
 	snapshotOnly observationMode = iota
 	resyncBaseline
@@ -94,10 +85,44 @@ func New(registry *project.Registry, books *projectbook.Service) *Service {
 func (s *Service) Queue(event filewatch.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
+	if s.closed || !stats.Enabled() {
 		return
 	}
 	s.pending[event.ProjectID] = s.pending[event.ProjectID] || event.Resync
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+// SetEnabled applies the user-wide capture policy without changing product
+// journals. Re-enabling observes fresh baselines, never the paused interval.
+func (s *Service) SetEnabled(enabled bool) {
+	s.drainMu.Lock()
+	defer s.drainMu.Unlock()
+	s.observationMu.Lock()
+	defer s.observationMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !stats.SetEnabled(enabled) {
+		return
+	}
+	clear(s.pending)
+	clear(s.baselines)
+	slog.Info("Local statistics setting changed", "enabled", enabled)
+	if !enabled || s.closed {
+		return
+	}
+	records, err := s.registry.List(true)
+	if err != nil {
+		slog.Warn("Refresh manuscript statistics baselines failed", "error", err)
+		return
+	}
+	for _, record := range records {
+		if record.Type == project.TypeBook && record.Status == project.StatusAvailable {
+			s.pending[record.ID] = true
+		}
+	}
 	select {
 	case s.wake <- struct{}{}:
 	default:
@@ -157,6 +182,9 @@ func (s *Service) drain() {
 func (s *Service) observe(ctx context.Context, record project.Record, layout project.Layout, mode observationMode) (book.WorkspaceSummary, error) {
 	s.observationMu.Lock()
 	defer s.observationMu.Unlock()
+	if !stats.Enabled() {
+		return book.WorkspaceSummary{}, ErrDisabled
+	}
 	_, summary, err := s.books.Summary(ctx, record.ID)
 	if err != nil || summary.Incomplete {
 		delete(s.baselines, record.ID)
@@ -191,6 +219,9 @@ func (s *Service) observe(ctx context.Context, record project.Record, layout pro
 // historical daylight-saving boundaries. Persisted observations stay in UTC.
 // Historical gaps stay null. A selected Project never changes app navigation.
 func (s *Service) Query(ctx context.Context, projectID string, days int, location *time.Location, now time.Time) (Report, error) {
+	if !stats.Enabled() {
+		return Report{}, ErrDisabled
+	}
 	// Join already-observed invalidations, including the subscription baseline,
 	// before serving a chart. This also preserves ordering with the worker.
 	s.drain()
@@ -215,8 +246,14 @@ func (s *Service) Query(ctx context.Context, projectID string, days int, locatio
 	if err != nil {
 		return report, err
 	}
-	models := make(map[string]*Model)
+	var usage usageAccumulator
+	usageDays := make([]usageAccumulator, days)
+	type modelKey struct{ name, runtime string }
+	models := make(map[modelKey]*usageAccumulator)
 	for _, record := range records {
+		if !stats.Enabled() {
+			return Report{}, ErrDisabled
+		}
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
@@ -263,23 +300,27 @@ func (s *Service) Query(ctx context.Context, projectID string, days int, locatio
 			slog.Warn("Read manuscript statistics failed", "project_id", record.ID, "error", err)
 		}
 		if err := stats.ReadCalls(layout.StoreRoot, from, until, func(call stats.Call) {
-			report.Usage.Totals.Add(call)
+			usage.add(call)
 			index := dayIndex[call.At.In(location).Format(time.DateOnly)]
-			report.Usage.Days[index].Add(call)
-			key := call.Runtime + "\x00" + call.Model
+			usageDays[index].add(call)
+			key := modelKey{name: call.Model, runtime: call.Runtime}
 			model := models[key]
 			if model == nil {
-				model = &Model{Name: call.Model, Runtime: call.Runtime}
+				model = &usageAccumulator{}
 				models[key] = model
 			}
-			model.Add(call)
+			model.add(call)
 		}); err != nil {
 			report.Issues++
 			slog.Warn("Read model statistics failed", "project_id", record.ID, "error", err)
 		}
 	}
-	for _, model := range models {
-		report.Usage.Models = append(report.Usage.Models, *model)
+	report.Usage.Totals = usage.summary()
+	for index := range usageDays {
+		report.Usage.Days[index].UsageSummary = usageDays[index].summary()
+	}
+	for key, model := range models {
+		report.Usage.Models = append(report.Usage.Models, Model{Name: key.name, Runtime: key.runtime, UsageSummary: model.summary()})
 	}
 	report.Game.sortStories()
 	if err := ctx.Err(); err != nil {

@@ -12,6 +12,9 @@ func TestDisableFencesCollectionEvenWhenPersistenceFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := s.BeginRun(Automation, Native, Scheduled)
+	// The start event is allowed while collection is enabled. Settle it before
+	// checking that the failed opt-out fences completion and later activity.
+	before := awaitEvents(t, c, 1)
 	// A directory is an invalid state file on every supported host, including
 	// Windows where chmod does not reliably simulate a read-only file.
 	s.path = t.TempDir()
@@ -23,7 +26,7 @@ func TestDisableFencesCollectionEvenWhenPersistenceFails(t *testing.T) {
 	}
 	run.Finish(Success)
 	s.Activity(Game)
-	if len(s.queue) > 0 || len(c.snapshot()) > 0 {
+	if len(s.queue) > 0 || len(c.snapshot()) != len(before) {
 		t.Fatal("activity escaped the failed preference write")
 	}
 	s.path = path

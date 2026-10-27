@@ -12,10 +12,13 @@ import (
 )
 
 type GameStory struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"project_id"`
-	Name      string `json:"name"`
-	Turns     int    `json:"turns"`
+	ID             string `json:"id"`
+	ProjectID      string `json:"project_id"`
+	Name           string `json:"name"`
+	Turns          int    `json:"turns"`
+	ActiveDays     int    `json:"active_days"`
+	LastActiveDate string `json:"last_active_date"`
+	NewBranches    int    `json:"new_branches"`
 }
 
 type GameDay struct {
@@ -60,11 +63,19 @@ func (report *Report) readGame(ctx context.Context, record project.Record, layou
 		if activity.Story.Preview {
 			continue
 		}
-		report.Game.Stories = append(report.Game.Stories, GameStory{ID: activity.Story.ID, ProjectID: record.ID, Name: activity.Story.Title, Turns: len(activity.TurnTimes)})
+		item := GameStory{ID: activity.Story.ID, ProjectID: record.ID, Name: activity.Story.Title, Turns: len(activity.TurnTimes), NewBranches: activity.NewBranches}
+		activeDays := make(map[string]struct{})
 		report.Game.NewBranches += activity.NewBranches
 		for _, at := range activity.TurnTimes {
-			report.Game.Days[dayIndex[at.In(from.Location()).Format(time.DateOnly)]].Turns++
+			date := at.In(from.Location()).Format(time.DateOnly)
+			activeDays[date] = struct{}{}
+			if date > item.LastActiveDate {
+				item.LastActiveDate = date
+			}
+			report.Game.Days[dayIndex[date]].Turns++
 		}
+		item.ActiveDays = len(activeDays)
+		report.Game.Stories = append(report.Game.Stories, item)
 	}
 }
 

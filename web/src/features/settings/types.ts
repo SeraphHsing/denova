@@ -88,6 +88,7 @@ export interface Settings {
   language?: string
   theme?: string
   motion_intensity?: string
+  statistics_enabled?: boolean | null
   update_check_enabled?: boolean | null
   update_download_enabled?: boolean | null
   max_iteration?: number | null

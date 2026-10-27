@@ -102,9 +102,13 @@ func (host settingsHost) SettingsRuntime(target appsettings.Target) (appsettings
 	}, nil
 }
 
-func (host settingsHost) ApplySettings(_ config.LayeredSettings, layer config.SettingsLayer) {
+func (host settingsHost) ApplySettings(layered config.LayeredSettings, layer config.SettingsLayer) {
 	if host.app == nil {
 		return
+	}
+	if layer == config.SettingsLayerUser {
+		enabled := layered.Effective.StatisticsEnabled
+		host.app.statisticsApp.SetEnabled(enabled == nil || *enabled)
 	}
 	host.app.mu.RLock()
 	projectID := ""

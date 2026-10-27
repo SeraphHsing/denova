@@ -57,6 +57,24 @@ func TestServiceRename(t *testing.T) {
 	}
 }
 
+func TestServiceRenameRejectsPortableCollision(t *testing.T) {
+	service := NewService(t.TempDir())
+	for name, content := range map[string]string{"chapters/draft.md": "draft", "chapters/final.md": "final"} {
+		if err := service.Create(name, "file", content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := service.Rename("chapters/draft.md", "FINAL.md"); err == nil || !strings.Contains(err.Error(), "portable filename collision") {
+		t.Fatalf("rename must reject case-folded destination collisions: %v", err)
+	}
+	for name, content := range map[string]string{"chapters/draft.md": "draft", "chapters/final.md": "final"} {
+		got, err := service.ReadFile(name)
+		if err != nil || got != content {
+			t.Fatalf("rename changed %s: content=%q, error=%v", name, got, err)
+		}
+	}
+}
+
 func TestServiceWriteFileIfRevisionRejectsStaleRevision(t *testing.T) {
 	workspace := t.TempDir()
 	service := NewService(workspace)

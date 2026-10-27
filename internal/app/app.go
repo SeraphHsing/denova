@@ -368,6 +368,9 @@ func (a *App) ensureServices() {
 		a.loreApp = loreapp.NewService(loreHost{app: a}, a.imageApp)
 		a.projectBook = projectbookapp.NewService(a.projectRegistry)
 		a.statisticsApp = statisticsapp.New(a.projectRegistry, a.projectBook)
+		if a.cfg != nil {
+			a.statisticsApp.SetEnabled(a.cfg.StatisticsEnabled)
+		}
 		if a.workspaceFiles != nil {
 			a.workspaceFiles.SetObserver(a.observeProjectFileChange)
 		}

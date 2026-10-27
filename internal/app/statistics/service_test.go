@@ -141,3 +141,70 @@ func TestProjectScopeAndViewerMidnight(t *testing.T) {
 		t.Fatalf("daylight-saving usage = %+v", report.Usage.Totals)
 	}
 }
+
+// Exercise percentile aggregation through persisted records and project/date
+// filtering; an external turn must not contaminate Native latency samples.
+func TestUsagePercentilesKeepRuntimeAndDateBoundaries(t *testing.T) {
+	root := t.TempDir()
+	content := filepath.Join(root, "projects", "Usage")
+	if err := os.MkdirAll(content, 0700); err != nil {
+		t.Fatal(err)
+	}
+	registry := project.NewRegistry(root)
+	record, err := registry.Add(content, project.TypeGeneral, "Usage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, err := registry.EnsureStore(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	appendCall := func(call stats.Call) {
+		t.Helper()
+		if err := stats.AppendCall(layout.StoreRoot, call); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index := int64(1); index <= 20; index++ {
+		appendCall(stats.Call{ID: "native", At: at, Kind: stats.ModelCall, Runtime: "native", Model: "model", DurationMS: index * 100, Failed: index == 20, Usage: &stats.Usage{Prompt: 10, Output: 2}})
+	}
+	appendCall(stats.Call{ID: "opaque", At: at, Kind: stats.RuntimeTurn, Runtime: "codex", Model: "model", DurationMS: 99999})
+	appendCall(stats.Call{ID: "yesterday", At: at.Add(-24 * time.Hour), Kind: stats.ModelCall, Runtime: "native", Model: "model", DurationMS: 0})
+	service := New(registry, projectbook.NewService(registry))
+	defer service.Close()
+	report, err := service.Query(context.Background(), record.ID, 1, time.UTC, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(summary UsageSummary, p50, p95 int64) {
+		t.Helper()
+		if summary.LatencyP50MS == nil || *summary.LatencyP50MS != p50 || summary.LatencyP95MS == nil || *summary.LatencyP95MS != p95 {
+			t.Fatalf("latency summary = %+v, want %d/%d", summary, p50, p95)
+		}
+	}
+	check(report.Usage.Totals, 1000, 1900)
+	check(report.Usage.Days[0].UsageSummary, 1000, 1900)
+	if report.Usage.Totals.Requests != 20 || report.Usage.Totals.ExternalTurns != 1 || report.Usage.Totals.UnknownUsage != 1 || report.Usage.Totals.FailedRequests != 1 || report.Usage.Totals.Tokens != 240 {
+		t.Fatalf("usage = %+v", report.Usage.Totals)
+	}
+	if len(report.Usage.Models) != 2 {
+		t.Fatalf("models = %+v", report.Usage.Models)
+	}
+	for _, model := range report.Usage.Models {
+		if model.Runtime == "native" {
+			check(model.UsageSummary, 1000, 1900)
+		} else if model.LatencyP50MS != nil || model.LatencyP95MS != nil {
+			t.Fatalf("opaque turn has latency samples: %+v", model)
+		}
+	}
+	report, err = service.Query(context.Background(), record.ID, 1, time.UTC, at.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(report.Usage.Totals, 0, 0)
+	report, err = service.Query(context.Background(), record.ID, 1, time.UTC, at.Add(-48*time.Hour))
+	if err != nil || report.Usage.Totals.LatencyP50MS != nil || report.Usage.Totals.LatencyP95MS != nil {
+		t.Fatalf("empty period = %+v, error=%v", report.Usage.Totals, err)
+	}
+}

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { GLOBAL_SETTINGS_TARGET, settingsQueryOptions } from '@/features/settings/query'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -102,6 +104,8 @@ export function WorkbenchShell({
   const { t, i18n } = useTranslation()
   const isMobile = useIsMobile()
   const pluginPages = usePluginPages()
+  const settings = useQuery(settingsQueryOptions(GLOBAL_SETTINGS_TARGET))
+  const statisticsEnabled = settings.data?.effective.statistics_enabled !== false
   const setCommandOpen = useWorkspaceStore((state) => state.setCommandOpen)
   const [activityOrders, setActivityOrders] = useState<Record<ActivityOrderScope, ActivityItemID[]>>(readStoredActivityOrders)
   const [hiddenActivityIDs, setHiddenActivityIDs] = useState<ActivityItemID[]>(readStoredHiddenActivityIDs)
@@ -279,9 +283,9 @@ export function WorkbenchShell({
   const allActivityItems = useMemo(
     () => sortActivityItems([
       ...creationActivityItems,
-      ...sharedActivityItems,
+      ...sharedActivityItems.filter(item => item.id !== 'statistics' || statisticsEnabled),
     ], activityOrder, defaultActivityOrderForScope(activityOrderScope)),
-    [pluginPages.data, i18n.language, activityOrder, activityOrderScope, agentChatActive, agentsActive, automationInboxUnread, automationRunning, automationsActive, developerMode, ideModeActive, interactiveModeActive, loreActive, mode, presetsActive, settingsOpen, skillsActive, t, trajectoryActive, versionsActive],
+    [pluginPages.data, i18n.language, activityOrder, activityOrderScope, agentChatActive, agentsActive, automationInboxUnread, automationRunning, automationsActive, developerMode, ideModeActive, interactiveModeActive, loreActive, mode, presetsActive, settingsOpen, skillsActive, statisticsEnabled, t, trajectoryActive, versionsActive],
   )
   const effectiveHiddenActivityIDs = useMemo(() => {
     const hasVisibleItem = allActivityItems.some((item) => !hiddenActivityIDs.includes(item.id))

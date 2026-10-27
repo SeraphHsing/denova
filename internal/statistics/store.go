@@ -56,6 +56,32 @@ type Writing struct {
 // readers from seeing an in-process partial append, across all Projects.
 var storeMu sync.Mutex
 
+// One process owns one locked data directory. Serialize the user-wide capture
+// policy with appends so disabling waits for any in-flight write to finish.
+var captureEnabled = true
+var captureSince time.Time
+
+func Enabled() bool {
+	storeMu.Lock()
+	defer storeMu.Unlock()
+	return captureEnabled
+}
+
+// SetEnabled reports a transition. Calls started before re-enabling are not
+// recorded later: they may include work performed while capture was disabled.
+func SetEnabled(enabled bool) bool {
+	storeMu.Lock()
+	defer storeMu.Unlock()
+	if captureEnabled == enabled {
+		return false
+	}
+	captureEnabled = enabled
+	if enabled {
+		captureSince = time.Now().UTC()
+	}
+	return true
+}
+
 func AppendCall(root string, call Call) error {
 	if call.Kind != ModelCall && call.Kind != RuntimeTurn {
 		return fmt.Errorf("invalid statistics call kind %q", call.Kind)
@@ -77,6 +103,9 @@ func appendRecord(root, category string, at time.Time, record any) error {
 	}
 	storeMu.Lock()
 	defer storeMu.Unlock()
+	if !captureEnabled || at.Before(captureSince) {
+		return nil
+	}
 	dir := filepath.Join(root, "statistics", category)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err

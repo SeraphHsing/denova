@@ -52,18 +52,21 @@ test('statistics records saved manuscript changes and stays a shared destination
   } })
   expect(generated.ok(), await generated.text()).toBe(true)
   await expect.poll(async () => (await read()).usage.totals.requests).toBeGreaterThan(0)
-  expect((await read()).usage.totals.tokens).toBeGreaterThan(0)
+  const captured = (await read()).usage.totals
+  expect(captured.tokens).toBeGreaterThan(0)
+  expect(captured.latency_p50_ms).not.toBeNull()
+  expect(captured.latency_p95_ms).toBeGreaterThanOrEqual(captured.latency_p50_ms!)
   const story = await createStartedStory(request, 'Game activity')
   await expect.poll(async () => (await read()).game.stories.find(item => item.id === story.id)?.turns).toBe(1)
   await page.getByRole('tab', { name: '游戏', exact: true }).click()
   await page.getByRole('button', { name: '刷新统计', exact: true }).click()
-  await expect(page.getByRole('tabpanel').getByText('游戏回合', { exact: true })).toBeVisible()
+  await expect(page.getByRole('tabpanel').getByRole('term').filter({ hasText: /^游戏回合$/ })).toBeVisible()
   await expect(page.getByRole('tabpanel').getByText(story.title, { exact: true })).toBeVisible()
 
 })
 
-const totals: UsageTotals = { requests: 140, external_turns: 8, failed_requests: 2, unknown_usage: 3, prompt: 1_200_000, cached: 900_000, output: 300_000, tokens: 1_500_000, duration_ms: 840_000, ttft_ms: 16_000, ttft_requests: 100 }
-const emptyTotals: UsageTotals = { requests: 0, external_turns: 0, failed_requests: 0, unknown_usage: 0, prompt: 0, cached: 0, output: 0, tokens: 0, duration_ms: 0, ttft_ms: 0, ttft_requests: 0 }
+const totals: UsageTotals = { requests: 140, external_turns: 8, failed_requests: 2, unknown_usage: 3, prompt: 1_200_000, cached: 900_000, output: 300_000, tokens: 1_500_000, duration_ms: 840_000, ttft_ms: 16_000, ttft_requests: 100, latency_p50_ms: 3000, latency_p95_ms: 20000 }
+const emptyTotals: UsageTotals = { requests: 0, external_turns: 0, failed_requests: 0, unknown_usage: 0, prompt: 0, cached: 0, output: 0, tokens: 0, duration_ms: 0, ttft_ms: 0, ttft_requests: 0, latency_p50_ms: null, latency_p95_ms: null }
 
 for (const theme of ['dark', 'light'] as const) {
   test(`statistics charts support ${theme}, narrow screens, filters and unknown usage`, async ({ page, request }) => {
@@ -85,7 +88,7 @@ for (const theme of ['dark', 'light'] as const) {
       const series = weights.map((weight, index) => {
         const before = prefix
         prefix += weight
-        const bucket = Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, Math.floor(value * prefix / sum) - Math.floor(value * before / sum)])) as unknown as UsageTotals
+        const bucket = Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value === null ? null : Math.floor(value * prefix / sum) - Math.floor(value * before / sum)])) as unknown as UsageTotals
         return { ...(single ? { ...emptyTotals, external_turns: 1, unknown_usage: 1 } : bucket), date: new Date(Date.UTC(2026, 9, 27 - days + index)).toISOString().slice(0, 10) }
       })
       const report: StatisticsReport = {
@@ -96,9 +99,9 @@ for (const theme of ['dark', 'light'] as const) {
         },
         game: {
           stories: single ? [] : [
-            { id: 'story-1', project_id: book.projectId, name: '旧车站与星光庭院：一条名字很长的故事线', turns: 24 },
-            { id: 'story-2', project_id: book.projectId, name: '雾港来信', turns: 12 },
-            { id: 'story-3', project_id: book.projectId, name: '最后一盏灯', turns: 6 },
+            { id: 'story-1', project_id: book.projectId, name: '旧车站与星光庭院：一条名字很长的故事线', turns: 24, active_days: 5, last_active_date: '2026-10-26', new_branches: 4 },
+            { id: 'story-2', project_id: book.projectId, name: '雾港来信', turns: 12, active_days: 3, last_active_date: '2026-10-25', new_branches: 2 },
+            { id: 'story-3', project_id: book.projectId, name: '最后一盏灯', turns: 6, active_days: 1, last_active_date: '2026-10-24', new_branches: 0 },
           ],
           days: series.map((day, index) => ({ date: day.date, turns: single ? 0 : Math.floor(42 * weights.slice(0, index + 1).reduce((a, b) => a + b, 0) / sum) - Math.floor(42 * weights.slice(0, index).reduce((a, b) => a + b, 0) / sum) })),
           new_branches: single ? 0 : 6,
@@ -106,7 +109,11 @@ for (const theme of ['dark', 'light'] as const) {
         usage: {
           totals: single ? { ...emptyTotals, external_turns: 1, unknown_usage: 1 } : totals,
           days: series,
-          models: single ? [] : [{ ...totals, name: 'Long-model-name-with-a-large-context-window', runtime: 'native' }],
+          models: single ? [{ ...emptyTotals, name: 'Unknown usage', runtime: 'codex', external_turns: 1, unknown_usage: 1 }] : [
+            { ...emptyTotals, name: 'Long-model-name-with-a-large-context-window', runtime: 'native', requests: 100, prompt: 600000, cached: 420000, output: 200000, tokens: 800000, duration_ms: 300000, ttft_ms: 10000, ttft_requests: 80, latency_p50_ms: 2500, latency_p95_ms: 4500 },
+            { ...emptyTotals, name: 'Slow model', runtime: 'native', requests: 40, failed_requests: 2, prompt: 500000, cached: 400000, output: 100000, tokens: 600000, duration_ms: 540000, ttft_ms: 6000, ttft_requests: 20, latency_p50_ms: 12000, latency_p95_ms: 20000 },
+            { ...emptyTotals, name: 'External model', runtime: 'codex', external_turns: 8, unknown_usage: 3, prompt: 100000, cached: 80000, tokens: 100000 },
+          ],
         },
         issues: 0,
       }
@@ -117,12 +124,16 @@ for (const theme of ['dark', 'light'] as const) {
     await page.getByLabel('工作台侧边栏').getByRole('button', { name: '统计', exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
     const panel = page.getByTestId('statistics-page')
-    await expect(panel.getByText('67,890', { exact: true })).toBeVisible()
-    await expect(panel.locator('.recharts-surface')).toHaveCount(3)
+    await expect(panel.getByRole('definition').filter({ hasText: /^67,890$/ })).toBeVisible()
+    await expect(panel.locator('.recharts-surface')).toHaveCount(1)
     await page.screenshot({ animations: 'disabled', path: test.info().outputPath(`writing-${theme}.png`) })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect.poll(async () => panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    await page.screenshot({ animations: 'disabled', path: test.info().outputPath(`writing-${theme}-narrow.png`) })
+    await page.setViewportSize({ width: 1440, height: 1100 })
     await page.getByRole('tab', { name: '游戏', exact: true }).click()
     await expect(panel.getByRole('definition').filter({ hasText: /^42$/ })).toBeVisible()
-    await expect(panel.locator('.recharts-surface')).toHaveCount(2)
+    await expect(panel.locator('.recharts-surface')).toHaveCount(1)
     await page.screenshot({ animations: 'disabled', path: test.info().outputPath(`game-${theme}.png`) })
     await page.setViewportSize({ width: 390, height: 844 })
     await expect.poll(async () => panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
@@ -138,7 +149,16 @@ for (const theme of ['dark', 'light'] as const) {
     await page.getByRole('tab', { name: '模型调用', exact: true }).click()
     await expect(panel.getByText('75.0%', { exact: true })).toBeVisible()
     await page.getByRole('radio', { name: '平均响应耗时', exact: true }).click()
-    await expect(panel.locator('.recharts-surface')).toHaveCount(3)
+    await expect(panel.locator('.recharts-surface')).toHaveCount(1)
+    const models = panel.getByRole('table', { name: '模型对比' })
+    await expect(models.getByRole('row').nth(1)).toContainText('Long-model-name')
+    await models.getByRole('button', { name: '耗时 P50 / P95', exact: true }).click()
+    await expect(models.getByRole('row').nth(1)).toContainText('Slow model')
+    await expect(models.getByRole('row').last()).toContainText('External model')
+    await models.getByRole('button', { name: '耗时 P50 / P95', exact: true }).click()
+    await expect(models.getByRole('row').nth(1)).toContainText('Long-model-name')
+    await expect(models.getByRole('row').last()).toContainText('External model')
+    await expect(models.getByText('12 秒 / 20 秒', { exact: true })).toBeVisible()
     await page.screenshot({ animations: 'disabled', path: test.info().outputPath(`models-${theme}.png`) })
     await page.setViewportSize({ width: 390, height: 844 })
     await expect(panel).toBeVisible()
@@ -146,10 +166,21 @@ for (const theme of ['dark', 'light'] as const) {
     await page.screenshot({ animations: 'disabled', path: test.info().outputPath(`models-${theme}-narrow.png`) })
     await page.getByRole('combobox', { name: '作品或项目' }).click()
     await page.getByRole('option', { name: book.title, exact: true }).click()
-    await expect(panel.getByText('1 次未报告用量', { exact: true })).toBeVisible()
+    await expect(panel.getByRole('table').getByText('1 次未报告用量', { exact: true })).toBeVisible()
     await expect(panel.getByText('尚无原生模型调用记录')).toBeVisible()
     expect(queryScopes).toContain(book.projectId)
     await page.getByRole('radio', { name: '30 天', exact: true }).click()
-    await expect(panel.getByText('1 次未报告用量', { exact: true })).toBeVisible()
+    await expect(panel.getByRole('table').getByText('1 次未报告用量', { exact: true })).toBeVisible()
+    await expect(panel.getByRole('table').getByRole('row').nth(1)).not.toContainText('NaN')
+    if (theme === 'light') {
+      const current = await (await request.get('/api/settings')).json()
+      expect((await request.patch('/api/settings', { data: { layer: 'user', base_revision: current.revisions.user, changes: { language: 'en-US' } } })).ok()).toBe(true)
+      await page.reload()
+      await page.getByRole('tab', { name: 'Model usage', exact: true }).click()
+      await expect(panel.getByRole('table', { name: 'Model comparison' })).toBeVisible()
+      await expect(panel.getByRole('term').filter({ hasText: /^Unsuccessful calls$/ })).toBeVisible()
+      await expect.poll(async () => panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+      await page.screenshot({ animations: 'disabled', path: test.info().outputPath('models-en-light-narrow.png') })
+    }
   })
 }

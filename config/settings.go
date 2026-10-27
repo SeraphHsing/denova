@@ -91,6 +91,7 @@ type Settings struct {
 	Language               string `toml:"language,omitempty" json:"language,omitempty"`
 	Theme                  string `toml:"theme,omitempty" json:"theme,omitempty"`
 	MotionIntensity        string `toml:"motion_intensity,omitempty" json:"motion_intensity,omitempty"`
+	StatisticsEnabled      *bool  `toml:"statistics_enabled,omitempty" json:"statistics_enabled,omitempty"`
 	UpdateCheckEnabled     *bool  `toml:"update_check_enabled,omitempty" json:"update_check_enabled,omitempty"`
 	UpdateDownloadEnabled  *bool  `toml:"update_download_enabled,omitempty" json:"update_download_enabled,omitempty"`
 
@@ -219,6 +220,7 @@ func DefaultSettings() Settings {
 		Theme:                       "dark",
 		MotionIntensity:             "system",
 		UpdateCheckEnabled:          boolPtr(true),
+		StatisticsEnabled:           boolPtr(true),
 		UpdateDownloadEnabled:       boolPtr(false),
 		ModelMaxRetries:             intPtr(5),
 		AgentIdleTimeoutSeconds:     intPtr(DefaultAgentIdleTimeoutSeconds),
@@ -399,6 +401,9 @@ func Merge(parent, child Settings) Settings {
 	}
 	if child.UpdateCheckEnabled != nil {
 		out.UpdateCheckEnabled = child.UpdateCheckEnabled
+	}
+	if child.StatisticsEnabled != nil {
+		out.StatisticsEnabled = child.StatisticsEnabled
 	}
 	if child.UpdateDownloadEnabled != nil {
 		out.UpdateDownloadEnabled = child.UpdateDownloadEnabled

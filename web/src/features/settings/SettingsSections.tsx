@@ -15,6 +15,7 @@ import { SettingsFieldRow } from '@/components/forms/settings-field-row'
 import { SettingsPageVisibility } from './SettingsPageFrame'
 import { AnalyticsSettings } from '@/features/analytics/AnalyticsPreferences'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { DEFAULT_MODEL_PROFILE_ID, modelEndpointsWithDefault, modelProfilesWithDefault } from './model-profiles'
 import { ModelProfilesEditor } from './ModelProfilesEditor'
 import { DEFAULT_IMAGE_API_PROFILE_ID, imageAPIEndpointsWithDefault, imageAPIProfilesWithDefault } from './image-profiles'
@@ -217,6 +218,11 @@ export const SettingsSections = memo(function SettingsSections({ layered, draft,
             >
               {t('settings.onboarding.reopen')}
             </Button>
+          </SettingsFieldRow>
+        </div>
+        <div data-settings-field="settings.statistics.enabled">
+          <SettingsFieldRow title={t('settings.statistics.enabled')} description={t('settings.statistics.description')} htmlFor="statistics-enabled" controlClassName="shrink-0">
+            <Switch id="statistics-enabled" checked={draft.statistics_enabled ?? effective.statistics_enabled ?? true} onCheckedChange={enabled => setField('statistics_enabled', enabled)} />
           </SettingsFieldRow>
         </div>
         <AnalyticsSettings />

@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata" // Keep viewer date boundaries available in native release binaries.
+
+	statisticsapp "denova/internal/app/statistics"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
@@ -25,6 +28,10 @@ func (h *Handlers) HandleStatistics(ctx context.Context, c *app.RequestContext) 
 	}
 	report, err := h.app.Statistics(ctx, strings.TrimSpace(c.Query("project_id")), days, location)
 	if err != nil {
+		if errors.Is(err, statisticsapp.ErrDisabled) {
+			writeErrorKey(c, consts.StatusForbidden, "api.statistics.disabled")
+			return
+		}
 		slog.ErrorContext(ctx, "Load statistics failed", "error", err)
 		writeErrorKey(c, consts.StatusInternalServerError, "api.statistics.loadFailed")
 		return
