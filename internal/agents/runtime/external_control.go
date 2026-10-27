@@ -225,7 +225,9 @@ func (control *ExternalController) Start(ctx context.Context, input ExternalCycl
 		if saved.Outcome != "" {
 			return &ExternalRun{control: control, emit: emit, receipt: saved.Receipt, replayed: true, outcome: agentrun.Outcome{Status: saved.Outcome}}, nil
 		}
-		return nil, ErrOperationActive
+		// The command was accepted but has no outcome and no live runner, so its
+		// input is suspended. Only resume or discard may settle it.
+		return nil, ErrOperationPaused
 	}
 	if control.active != nil {
 		return nil, ErrOperationActive
@@ -233,7 +235,7 @@ func (control *ExternalController) Start(ctx context.Context, input ExternalCycl
 	run := &ExternalRun{control: control, factory: factory, emit: emit}
 	err = control.update(ctx, func(state *externalControlState) error {
 		if state.Phase != agentrun.RunPhaseIdle {
-			return ErrOperationActive
+			return ErrOperationPaused
 		}
 		if _, found, err := state.receipt(request.CommandID); err != nil {
 			return err

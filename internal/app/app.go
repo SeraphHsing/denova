@@ -332,6 +332,10 @@ var ErrNoWorkspaceOpen = settingsapp.ErrProjectRequired
 // root operation.
 var ErrAgentOperationActive = agentruntime.ErrOperationActive
 
+// ErrAgentOperationPaused rejects a new root start while a suspended operation
+// still owns the conversation. Callers must resume or discard that operation.
+var ErrAgentOperationPaused = agentruntime.ErrOperationPaused
+
 // ErrWorkspaceTransition prevents a task from binding half to an old
 // workspace and half to a newly constructed runtime.
 var ErrWorkspaceTransition = appagentruntime.ErrWorkspaceTransition
