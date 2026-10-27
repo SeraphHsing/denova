@@ -23,16 +23,23 @@ type Preferences struct {
 }
 
 type state struct {
-	Format      int       `json:"format"`
-	Enabled     bool      `json:"enabled"`
-	NoticeSeen  bool      `json:"notice_seen"`
-	ID          string    `json:"id,omitempty"`
-	FirstActive string    `json:"first_active,omitempty"`
-	Day         string    `json:"day,omitempty"`
-	Week        string    `json:"week,omitempty"`
-	Month       string    `json:"month,omitempty"`
-	Features    []Feature `json:"features,omitempty"`
-	Retention   []int     `json:"retention,omitempty"`
+	Format            int       `json:"format"`
+	Enabled           bool      `json:"enabled"`
+	NoticeSeen        bool      `json:"notice_seen"`
+	CollectorNotice   string    `json:"collector_notice,omitempty"`
+	ID                string    `json:"id,omitempty"`
+	FirstActive       string    `json:"first_active,omitempty"`
+	Day               string    `json:"day,omitempty"`
+	Week              string    `json:"week,omitempty"`
+	Month             string    `json:"month,omitempty"`
+	Features          []Feature `json:"features,omitempty"`
+	Retention         []int     `json:"retention,omitempty"`
+	PostHogSeen       string    `json:"posthog_first_seen,omitempty"`
+	CohortOrigin      string    `json:"cohort_origin,omitempty"`
+	FirstVersion      string    `json:"first_app_version,omitempty"`
+	ActivatedFeatures []Feature `json:"activated_features,omitempty"`
+	CoreDay           string    `json:"core_day,omitempty"`
+	CoreFeatures      []Feature `json:"core_features,omitempty"`
 }
 
 func hostStatePath() (string, error) {
@@ -61,6 +68,9 @@ func loadState(path string) (state, error) {
 	if initial.Format != 1 {
 		return state{}, fmt.Errorf("unsupported analytics state format")
 	}
+	if initial.CollectorNotice != "" && initial.CollectorNotice != "posthog" {
+		return state{}, fmt.Errorf("invalid analytics collector notice")
+	}
 	if initial.ID != "" {
 		if !strings.HasPrefix(initial.ID, "app_") {
 			return state{}, fmt.Errorf("invalid analytics identity")
@@ -69,20 +79,26 @@ func loadState(path string) (state, error) {
 			return state{}, fmt.Errorf("invalid analytics identity")
 		}
 	}
-	for _, date := range []string{initial.FirstActive, initial.Day} {
+	for _, date := range []string{initial.FirstActive, initial.Day, initial.PostHogSeen, initial.CoreDay} {
 		if date != "" {
 			if _, err := time.Parse("2006-01-02", date); err != nil {
 				return state{}, fmt.Errorf("invalid analytics date")
 			}
 		}
 	}
-	if len(initial.Features) > 9 || len(initial.Retention) > 3 {
+	if len(initial.Features) > 9 || len(initial.Retention) > 3 || len(initial.ActivatedFeatures) > 9 || len(initial.CoreFeatures) > 9 {
 		return state{}, fmt.Errorf("analytics counters exceed bounds")
 	}
-	for _, feature := range initial.Features {
+	for _, feature := range append(append(slices.Clone(initial.Features), initial.ActivatedFeatures...), initial.CoreFeatures...) {
 		if !feature.Valid() {
 			return state{}, fmt.Errorf("invalid analytics feature")
 		}
+	}
+	if initial.CohortOrigin != "" && initial.CohortOrigin != "new_instance" && initial.CohortOrigin != "migrated" {
+		return state{}, fmt.Errorf("invalid analytics cohort origin")
+	}
+	if initial.FirstVersion != "" && initial.FirstVersion != "unknown" && !versionPattern.MatchString(initial.FirstVersion) {
+		return state{}, fmt.Errorf("invalid analytics cohort version")
 	}
 	for _, day := range initial.Retention {
 		if !slices.Contains([]int{1, 7, 30}, day) {

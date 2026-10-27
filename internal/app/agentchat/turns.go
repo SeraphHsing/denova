@@ -124,7 +124,7 @@ func (turn *AcceptedTurn) Wait(ctx context.Context) agentrun.Outcome {
 	case agentrun.OutcomeCompleted:
 		turn.usageRun.Finish(analytics.Success)
 	case agentrun.OutcomeFailed:
-		turn.usageRun.Finish(analytics.Failure)
+		turn.usageRun.Fail(outcome.Error)
 	case agentrun.OutcomeAborted:
 		turn.usageRun.Finish(analytics.Cancelled)
 	case agentrun.OutcomeSuspended:

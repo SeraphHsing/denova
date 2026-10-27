@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { GLOBAL_SETTINGS_TARGET, settingsQueryOptions } from '@/features/settings/query'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { arrayMove } from '@dnd-kit/sortable'
 import { MobileWritingWorkspace } from './MobileWritingWorkspace'
-import { BookOpen, Bot, Clock3, Database, Gamepad2, History, Package, PanelLeft, PenLine, Route, Search, Settings, SlidersHorizontal, Sparkles, Terminal } from 'lucide-react'
+import { BarChart3, BookOpen, Bot, Clock3, Database, Gamepad2, History, Package, PanelLeft, PenLine, Route, Search, Settings, SlidersHorizontal, Sparkles, Terminal } from 'lucide-react'
 import { WorkspaceLayout } from '@/components/layout/workspace-layout'
 import { WorkspaceMobileLayout, type MobileNavItem } from '@/components/layout/workspace-mobile-layout'
 import { createStablePortalHost, StablePortalSlot } from '@/components/layout/stable-portal-slot'
@@ -13,6 +15,7 @@ import { closeMobilePanes } from '@/components/layout/mobile-pane-events'
 import { Button } from '@/components/ui/button'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { MessageCenterButton } from '@/features/messages/MessageCenter'
+import { requestUpdateNotes } from '@/features/settings/update-events'
 import type { AutomationMessageNavigation } from '@/features/messages/types'
 import { requestAutomationNavigation } from '@/features/automations/automation-navigation'
 import { setActivityMessageUnreadCount, useActivitySummary } from '@/features/activity/use-activity-summary'
@@ -101,6 +104,8 @@ export function WorkbenchShell({
   const { t, i18n } = useTranslation()
   const isMobile = useIsMobile()
   const pluginPages = usePluginPages()
+  const settings = useQuery(settingsQueryOptions(GLOBAL_SETTINGS_TARGET))
+  const statisticsEnabled = settings.data?.effective.statistics_enabled !== false
   const setCommandOpen = useWorkspaceStore((state) => state.setCommandOpen)
   const [activityOrders, setActivityOrders] = useState<Record<ActivityOrderScope, ActivityItemID[]>>(readStoredActivityOrders)
   const [hiddenActivityIDs, setHiddenActivityIDs] = useState<ActivityItemID[]>(readStoredHiddenActivityIDs)
@@ -222,6 +227,7 @@ export function WorkbenchShell({
   ]
 
   const sharedActivityItems: ActivityItem[] = [
+    { id: 'statistics', label: t('workbench.activity.statistics'), onClick: () => openRoute('statistics'), active: mode === 'statistics' && !settingsOpen, icon: <BarChart3 className="size-4" /> },
     { id: 'market', label: t('market.title'), onClick: () => openRoute('market'), active: mode === 'market' && !settingsOpen, icon: <Package className="size-4" /> },
     {
       id: 'agentchat',
@@ -277,9 +283,9 @@ export function WorkbenchShell({
   const allActivityItems = useMemo(
     () => sortActivityItems([
       ...creationActivityItems,
-      ...sharedActivityItems,
+      ...sharedActivityItems.filter(item => item.id !== 'statistics' || statisticsEnabled),
     ], activityOrder, defaultActivityOrderForScope(activityOrderScope)),
-    [pluginPages.data, i18n.language, activityOrder, activityOrderScope, agentChatActive, agentsActive, automationInboxUnread, automationRunning, automationsActive, developerMode, ideModeActive, interactiveModeActive, loreActive, mode, presetsActive, settingsOpen, skillsActive, t, trajectoryActive, versionsActive],
+    [pluginPages.data, i18n.language, activityOrder, activityOrderScope, agentChatActive, agentsActive, automationInboxUnread, automationRunning, automationsActive, developerMode, ideModeActive, interactiveModeActive, loreActive, mode, presetsActive, settingsOpen, skillsActive, statisticsEnabled, t, trajectoryActive, versionsActive],
   )
   const effectiveHiddenActivityIDs = useMemo(() => {
     const hasVisibleItem = allActivityItems.some((item) => !hiddenActivityIDs.includes(item.id))
@@ -368,7 +374,7 @@ export function WorkbenchShell({
         <WorkbenchNoticePill
           expanded={activityBarExpanded}
           notice={notice}
-          onOpenSettings={onToggleSettings}
+          onOpenUpdate={() => { if (notice?.kind === 'update') requestUpdateNotes({ fromVersion: notice.currentVersion, toVersion: notice.latestVersion }) }}
           onDismiss={onDismissNotice}
         />
       ) : undefined}
@@ -432,7 +438,7 @@ export function WorkbenchShell({
           </Button>
           <MessageCenterButton showLabel className="!min-h-11 !w-full justify-center" unreadCount={messageUnread} onUnreadCountChange={setActivityMessageUnreadCount} onOpenAutomation={openAutomationNotification} />
         </div>
-        {notice && <WorkbenchNoticePill expanded notice={notice} starSecondaryText="description" onOpenSettings={() => { closeMobilePanes(); onToggleSettings() }} onDismiss={onDismissNotice} />}
+        {notice && <WorkbenchNoticePill expanded notice={notice} starSecondaryText="description" onOpenUpdate={() => { closeMobilePanes(); if (notice.kind === 'update') requestUpdateNotes({ fromVersion: notice.currentVersion, toVersion: notice.latestVersion }) }} onDismiss={onDismissNotice} />}
       </div>
     )
     const mobileActivityItems: MobileNavItem[] = allActivityItems

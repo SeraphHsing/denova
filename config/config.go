@@ -103,6 +103,7 @@ type Config struct {
 	InteractiveReplyTargetChars int                       `toml:"-"`
 	ResumeLastWorkspace         bool                      `toml:"-"`
 	UpdateCheckEnabled          bool                      `toml:"-"`
+	StatisticsEnabled           bool                      `toml:"-"`
 }
 
 // LoadWithWorkspace 在已知 workspace 时读取分层配置（默认 < 用户级 < 工作区级 < 环境变量）。
@@ -193,6 +194,7 @@ func configFromLayered(novaDir, workspace string, layered LayeredSettings) *Conf
 		InteractiveReplyTargetChars: 2000,
 		ResumeLastWorkspace:         true,
 		UpdateCheckEnabled:          settingsBool(s.UpdateCheckEnabled, true),
+		StatisticsEnabled:           settingsBool(s.StatisticsEnabled, true),
 	}
 
 	// 环境变量始终最高优先级
@@ -459,6 +461,7 @@ func Load() *Config {
 			InteractiveReplyTargetChars: 2000,
 			ResumeLastWorkspace:         true,
 			UpdateCheckEnabled:          settingsBool(d.UpdateCheckEnabled, true),
+			StatisticsEnabled:           settingsBool(d.StatisticsEnabled, true),
 		}
 		overrideFromEnv(cfg)
 		if cfg.Workspace != "" {

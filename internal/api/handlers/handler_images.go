@@ -92,7 +92,7 @@ func (h *Handlers) HandleImageGenerate(ctx context.Context, c *app.RequestContex
 	usageRun := h.app.Analytics().BeginRun(analytics.Image, analytics.Native, analytics.User)
 	result, err := h.app.Images().Generate(ctx, req)
 	if err != nil {
-		usageRun.Finish(analytics.Failure)
+		usageRun.Fail(err)
 		if err == novaApp.ErrNoWorkspace {
 			writeErrorKey(c, consts.StatusBadRequest, "api.settings.workspaceMissing")
 			return

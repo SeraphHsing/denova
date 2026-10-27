@@ -12,6 +12,11 @@ Denova records major user-visible features, important compatibility or data chan
 
 ## [Unreleased]
 
+### Changed / 变更
+
+- 常规设置可关闭本地统计，已有统计记录与创作内容保持不变；统计页采用更紧凑的活动对比与表格展示。
+- Local statistics can be disabled in General settings while existing records and creative content are kept; statistics pages use more compact activity comparisons and tables.
+
 ## [v0.6.3-b] - 2026-10-23
 
 ### Brief / 简要说明

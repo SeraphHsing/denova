@@ -133,7 +133,7 @@ For public or domain-based deployments, put Denova behind an HTTPS reverse proxy
 
 ## Usage statistics
 
-Release builds explain usage statistics on first use. Collection is enabled by default and starts only after the notice is acknowledged. Turn it off anytime under **Settings → General**. Only fixed activity, feature reach, retention, version, platform, execution outcome and duration in milliseconds are sent to Umami Cloud, without creative text, prompts, AI replies, images, project names, file paths or keys. A random local ID links return visits; the cloud receives the connection IP. Source and development builds do not send statistics. See the [metric and field definitions](./docs/analytics.md).
+Release builds explain usage statistics on first use. Collection is enabled by default and starts only after the notice is acknowledged. Turn it off anytime under **Settings → General**. PostHog receives fixed activity, feature usage, retention, version, platform, execution outcome, duration in milliseconds, error category, HTTP status, and theme/language changes, without creative text, prompts, AI replies, images, project names, file paths, keys or raw error text. A random local ID links return visits; the cloud receives the connection IP. Source and development builds do not send statistics. See the [metric and field definitions](./docs/analytics.md).
 
 ## Development
 

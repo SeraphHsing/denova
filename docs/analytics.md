@@ -1,141 +1,245 @@
-# Usage statistics
+# App product analytics
 
-Denova release builds send optional product events directly to Umami Cloud's
-`https://gateway.umami.is/api/send`, using Website ID
-`23394fdd-4d21-4dd0-b833-16bfedff38d8`, `tag=app`, and the synthetic hostname
-`app.denova-ai.com`. The public website uses the same Website ID and `tag=site`.
-Always filter dashboards by tag; the Website overview and monthly allowance are
-shared. No management API key is bundled with either application.
+Release builds send optional, content-free product events to PostHog US Cloud.
+The public capture token and ingestion endpoint are in
+`internal/analytics/project.go`. A capture token grants ingestion only; never
+ship a personal or project secret management API key. End users do not need an
+`.env` file, Node.js, an SDK setup wizard, or a PostHog account.
 
-## User control and privacy
+The App no longer sends anything to Umami. The separately hosted public website
+is unchanged and still has its own analytics integration. Website download
+clicks and App activity do not share an attribution identity.
 
-The first-run notice explains that collection is enabled by default. No event
-is collected until the notice is dismissed. Users can turn it off immediately
-or under Settings → General. Disabling cancels in-flight delivery, drops the
-memory queue, and invalidates earlier execution handles. Re-enabling does not
-upload earlier activity. The setting applies to the host user across Projects,
-writing, games, and authenticated LAN clients.
+## Collection and identity
 
-A preference write failure also stops collection in memory and permits a save
-retry; it never leaves the first-run notice blocking creation. Reading time
-from before a disable/re-enable transition is discarded.
+- Source builds and `--dev-mode` never read host analytics state or send events.
+- The notice names PostHog and explains the fields. Collection starts only after
+  acknowledgement and remains optional in Settings → General.
+- On upgrading from the last Umami release, an enabled instance must acknowledge
+  the new collector. A previous opt-out remains disabled without a new prompt.
+- The existing random `app_<UUID>` identity, preference and first-active date
+  remain in `os.UserConfigDir()/Denova/analytics.json`. This host-user state is
+  outside portable `.denova` data. Browsers and LAN clients of a host share one
+  identity. Reinstallation preserving this state preserves identity; deleting
+  the state starts a new observation. Counts describe instances, not natural people.
+- `cohort_origin=migrated` and `first_app_version=unknown` identify previously
+  active instances. `new_instance` means first observed participating activity,
+  not proof of a new download or a new person. Historical activity is not replayed.
 
-Source/development builds do not read host analytics state or send events.
-Missing permissions, corrupt state, or another running process owning the host
-analytics lease disable statistics without blocking creative data loading.
+Only the typed allowlist in `internal/analytics/events.go` is serialized.
+Common properties are `source=app`, `schema_version=2`, `app_version`, `os`,
+and bounded cohort dates/origin/version where known. `distinct_id` is the local
+random identity. `cohort_date` retains its original meaning: first effective
+activity, while `first_seen_date` is first observation by the new collector.
+For new instances, `first_app_version` is the first PostHog-observed version;
+it is not an inferred original installation version.
 
-`os.UserConfigDir()/Denova/analytics.json` stores only the preference, notice
-acknowledgement, random `app_<UUID>` identity, first active date, recent period
-keys, today's bounded feature set, and three retention markers. This file is
-outside portable `.denova` data and is not a Session recovery journal. No
-operation history or offline event payloads are persisted. Reinstalling while
-keeping this file preserves identity; deleting it starts a new observation.
+No manuscripts, prompts, AI replies, images, project names/IDs, file paths,
+model names, API endpoints/keys, error text, stacks, browser URLs, DOM content,
+or clipboard data are uploaded. Settings analytics accepts theme and language
+only. Exception details remain in existing local logs. No browser PostHog SDK,
+autocapture, session replay, automatic exception capture, or LLM tracing is enabled.
+Cloud receives the outbound connection IP. The random persistent ID makes this
+pseudonymous analysis, not absolute anonymity.
 
-Only explicitly constructed fields from `internal/analytics/events.go` cross
-the network. They include fixed categories, version/platform, execution result,
-integer execution duration in milliseconds, dates, and a random identity.
-Manuscripts, prompts, model replies, images, names, paths, business IDs, model
-names, API endpoints/keys, raw errors, trace data, and journal content are
-excluded. Browser activity
-requests accept only a feature enum and reject extra fields. Cloud receives the
-connection IP; a persistent random ID makes this pseudonymous usage analysis,
-not fully anonymous collection.
+## Events and counting rules
 
-## Event catalog and metrics
-
-There are ten event names. Every event includes `version` and `platform` in
-its data, set centrally when the event is created. They describe the running
-application at the time of the event, not the version or platform at first use.
-The envelope includes the random local identity, timestamp, fixed Website ID,
-`tag=app`, synthetic hostname, and a fixed category path such as `/app/writing`;
-it never contains a real Project path or browser URL.
-
-| Event | Admission | Additional properties |
+| Event | Trigger and deduplication | Specific properties |
 | --- | --- | --- |
-| `app.first_active` | First observed user activity per identity | `cohort_date` |
-| `app.active_day` | First user activity per UTC day | None |
-| `app.active_week` | First activity per ISO calendar week | None |
-| `app.active_month` | First activity per calendar month | None |
-| `app.retained_d1`, `app.retained_d7`, `app.retained_d30` | User activity exactly 1, 7, or 30 UTC days after first activity | `cohort_date` |
-| `app.feature_active` | First effective activity in a category per UTC day | `feature` |
-| `app.run_finished` | One ended Writing/Game/Chat/Automation execution or direct image request | `feature`, `runtime`, `trigger`, `outcome`, `duration_ms` |
-| `app.action_completed` | Successful Book creation, Book export, or Project version restore | `action` |
+| `app_first_seen` | Once when a participating instance is first observed by PostHog | Cohort metadata |
+| `app_opened` | First authenticated UI opening per backend process, after acknowledgement | Cohort metadata |
+| `app_first_active` | First effective activity in the instance's lifetime; existing instances do not emit it again | Cohort metadata |
+| `app_active_day` | First effective user activity per UTC date | Cohort metadata |
+| `feature_active` | First effective activity per feature per UTC date | `feature_name` |
+| `feature_used` | Every 30-second focused reading milestone, changed chapter save, admitted execution, or completed explicit action | `feature_name`, `operation`, `trigger`; runs also carry `runtime`, `run_id` |
+| `feature_completed` | One successfully ended execution | Run fields, `outcome=success`, numeric `duration_ms` |
+| `feature_failed` | One failed execution | Run fields, `outcome=failure`, numeric `duration_ms`, `error_code` |
+| `feature_ended` | One cancelled, suspended, or preempted execution | Run fields, actual `outcome`, numeric `duration_ms` |
+| `app_activated` | First successful user-initiated execution or changed chapter save in each feature | `feature_name` |
+| `core_active_day` | First such successful user work per feature per UTC date | `feature_name` |
+| `action_completed` | Successful book creation, book export, or project version restore | `feature_name`, `action` |
+| `settings_changed` | Successfully changed effective theme or language | `setting_name`, enum `value` |
+| `app_error` | Registered authenticated API error, fixed browser exception kind, or recovered API panic | `error_source`, `error_code`; API errors include HTTP `status_code` and a fixed feature when known |
 
-DAU/WAU/MAU are the event counts of their respective period events. WAU is an
-ISO week and MAU a calendar month; these are not rolling 7/30-day uniques. A
-backend process, reload, empty Writing/Game page, automatic saves without
-changes, tool call, or sub-Agent does not independently count as activity.
-Focused visible content reading counts after 30 seconds. Changed editor saves,
-user execution admission, and completed explicit actions also count.
-Automation-origin Chat executions carry `trigger=automation` and do not create
-user activity, retention or daily feature events.
+Features are `writing`, `game`, `chat`, `image`, `library`, `versions`,
+`automation`, `projects`, and `resources`. A read is 30 seconds with the page
+visible, focused, and relevant content present for writing/game. An empty page,
+server startup, automatic save without changes, model tool round, or sub-Agent
+does not independently create daily activity. Settings changes and diagnostic
+events alone also do not create creative activity.
 
-Feature categories are `writing`, `game`, `chat`, `image`, `library`, `versions`,
-`automation`, `projects` and `resources`. Feature reach is the count of
-`app.feature_active` for a feature, divided by DAU over the same day. Reading
-and explicit operations both qualify; one and ten qualifying visits to a
-category on the same day produce one event. This measures reach, not visit
-frequency, total reading time, or depth of use.
+`feature_used.operation` distinguishes `read`, `edit`, `run`, and the
+three explicit actions. These are qualified milestones/operations, not every
+mouse click or a measurement of total reading time. Manual edit activation
+requires a changed Markdown file in a Book Project's `chapters/` directory;
+editing config/code or saving an unchanged file does not qualify.
 
-Execution results are bounded to `success`, `failure`, `cancelled`, `suspended`
-and `preempted`. Runtimes are `native`, `codex` and `claude`; triggers are `user`
-and `automation`. `duration_ms` is the whole execution's integer elapsed time
-in milliseconds, including zero for an execution shorter than one millisecond.
-Only execution events carry it. It is not model first-token latency and is
-not bucketed or capped. Internal runtime continuation/tool rounds are not
-independently instrumented. An execution outcome is a technical result, not a
-judgement of creative quality.
+Automation executions use `trigger=automation`. They create execution events
+but never daily user activity, activation or core activity. Select
+`trigger=user` when analyzing user execution counts. Runs are whole admitted
+executions, including external runtimes, not every model or tool round.
+`duration_ms` includes the whole run and is not first-token latency.
 
-`app.run_finished` describes the outcomes of executions that finish and are
-successfully reported. There is no paired start event or crash report;
-executions interrupted by a process crash can be missing. Do not interpret
-its success ratio as the success rate of every attempted execution.
+Success is a technical outcome, not creative quality or proof that changes were
+kept. Core work is a proxy based on successful user-originated work. Overnight
+runs can finish on a different day without a user currently present; completion
+day core counts are not necessarily a subset of foreground DAU.
 
-Completed actions are `book_created`, `content_exported` and `version_restored`.
-`book_created` covers the Create Book entry point, not every kind of Project
-creation. `content_exported` covers Book export, not every resource export.
-Their activity categories are `projects`, `writing` and `versions`, respectively.
+The same random `run_id` joins a `feature_used` event with `operation=run`
+to exactly one terminal event. A run that never finishes is not a success or a
+failure. Suspensions/cancellations/preemptions are reported separately. Some
+admission/configuration failures occur before a run handle exists; HTTP failures
+are diagnosed separately rather than invented as failed executions.
 
-For each `cohort_date`, D7 retention is `app.retained_d7 / app.first_active`;
-calculate only after the cohort has aged seven complete days. D1/D30 use the
-same rule. These are first observed participating active instances, not new
-downloads or natural persons. Several browsers/LAN devices share a host identity.
-The website's download click does not prove download completion, and no identity
-is transferred between website and App.
+## Errors and crashes
 
-D7 means a return on exactly the seventh UTC day, not any return within seven
-days. Review it alongside weekly/monthly activity for intermittent creative
-work. Compare cohorts by their first-active date; filtering return events by
-their current `version` does not produce retention by first-use version.
+Execution errors are classified from structured provider/network/filesystem
+errors into `authentication`, `rate_limit`, `timeout`, `network`,
+`provider_unavailable`, `invalid_request`, `permission_denied`, `not_found`,
+`cancelled`, or `unknown`. Raw text is never used as a cloud property.
+Adapters that lose structured causes may produce `unknown`.
 
-Umami's default visitor/retention implementation uses sessions, which can split
-after network changes or salt rotation. Use the deduplicated events above for
-product metrics instead of treating Website visitors as App users. Use event
-property breakdowns or dashboard exports for cohort calculations.
+Browser kinds are `react_error`, `window_error`, `unhandled_rejection`,
+`white_screen`, and `startup`. The API accepts only those enums, rejecting
+messages, stacks and extra fields. Browser error delivery failures are ignored
+and cannot recursively generate more error reports.
+
+API errors use `error_source=api`, `error_code=http_error`, a status, and a
+locally derived feature. No URL, route parameter or response text is serialized.
+A 4xx may be validation or an expected conflict; do not treat all API errors as
+bugs. An execution failure may also lead to an HTTP error: do not sum both
+series and call it a count of distinct incidents.
+
+`panic_recovered` means Hertz recovered a request panic. It is not a process
+crash. There is deliberately no misleading `app_crashed` counter. Hard crashes,
+forced kills, power loss, frontend failures without a working backend, and
+failures before acknowledgement may have no report. These custom events support
+product error analysis; they are not native PostHog Error Tracking issues with
+uploaded exception stacks.
+
+## PostHog dashboard recipes
+
+Apply `source=app` and `schema_version=2` to every App insight. Exclude
+`source=app-test` smoke data. Set calendar reporting to UTC to align with the
+client's per-day counters. Unique-user counts here mean unique random instances.
+
+| Question | Insight configuration |
+| --- | --- |
+| Effective DAU | Trends: `feature_used`, `trigger=user`, Unique users, daily |
+| Rolling WAU/MAU | Same qualified user-use event, Weekly active users / Monthly active users; do not sum daily counts |
+| Opens vs effective use | Separate trends for `app_opened` and `app_active_day`; a process can remain running for days, so opening count is not DAU |
+| Feature reach | `feature_used`, `trigger=user`, Unique users, breakdown `feature_name` |
+| Feature usage frequency | `feature_used`, Total count, `trigger=user`, breakdown `feature_name` and `operation` |
+| User execution results | Terminal events, filter `trigger=user`, breakdown feature/runtime/outcome; show cancellation and suspension separately |
+| Completed-run failure proportion | `feature_failed / (feature_failed + feature_completed)` with identical filters; label as observed ended-run failure proportion |
+| Full admitted-run outcomes | SQL: join starts with terminals by `run_id`, selecting a start cohort and observation cutoff; keep unmatched starts separate as unfinished/unknown |
+| Latency | `feature_completed` or `feature_failed`, numeric property `duration_ms`, Median/P95, with the same feature/runtime/trigger filters |
+| Initial activation | Funnel `app_first_seen → app_activated`, final step filtered to writing or game; choose and label a conversion window |
+| Activation retention | Retention start `app_activated` (first-ever), return `core_active_day`; filter the same feature on both steps, exact calendar days, UTC |
+| Writing/game return visits | Start/return `feature_active`, with the same feature filter, choosing first-ever or recurring deliberately |
+| Errors | `app_error`, Total count and Unique users, breakdown error_source/error_code/status_code; run failures are a separate chart |
+| Preferences | `settings_changed`, breakdown setting_name/value |
+
+Use qualified `feature_used` events for primary DAU/reach: multiple received
+observations give PostHog more opportunities to observe an active instance.
+The deduplicated `app_active_day` and `feature_active` markers remain useful
+cross-checks, but a lost once-per-day marker must not erase otherwise received
+activity from the main report. Do not use all events for DAU: automated runs
+and diagnostics would inflate it.
+
+For new-user activation cohorts, select `cohort_origin=new_instance`; analyze
+migration separately. PostHog's first received event is not the original
+installation date. `first_app_version` is unknown for migrated instances;
+filtering current `app_version` is not first-version cohort analysis.
+
+Native PostHog retention and funnel reports can compute these from events.
+Do not compare old Umami period-marker totals to PostHog unique instances.
+Strict D7 means activity on the seventh calendar day, not any return within
+seven days. Choose PostHog's calendar/relative and exact/unbounded options
+explicitly; wait until each cohort has matured before comparing rates.
+
+## Managed cloud dashboard
+
+[Denova App product analytics](https://us.posthog.com/project/685522/dashboard/2256487)
+contains 17 saved insights in three sections. The project timezone is UTC and
+the dashboard remains private. The two wizard-generated dashboards are preserved.
+
+- Activity: DAU/rolling WAU/MAU, selected-period feature reach and use counts,
+  daily feature reach/frequency, and a seven-day new-instance activation funnel.
+- Retention: separate writing/game first-activation heatmaps through D30, plus
+  a D1/D7/D30 summary with explicit mature cohort sizes and return counts.
+- Execution quality: observed ended-run success rate, outcome trends, admitted
+  starts joined to observed ends, P50/P95 duration by feature/runtime/outcome,
+  daily success duration, error trend and affected instances, application error
+  classification, execution failure causes, and ingestion status.
+
+The retention summary selects activation cohorts using the chosen date range
+and observes same-feature returns through the present. A Dn denominator includes
+an instance only after its entire nth UTC calendar day has ended. A missing
+return counts as no observed return; an immature instance is excluded. A zero
+denominator produces `NULL`, not a misleading zero-percent rate. The admitted-run
+table similarly selects starts by date range and observes matching terminal
+events through the present; unmatched starts remain unfinished or missing.
+
+SQL tables use `{filters}` for the selected date range and fixed production
+predicates for `source=app` / `schema_version=2`. Unique instances over a selected
+period are computed directly rather than summed from daily counts. Automated
+executions are excluded from user activity and user execution reports. The
+native daily latency chart uses milliseconds; the grouped latency table uses
+seconds and shows its sample size.
+
+The reusable management script requires Node 22+ and a personal API key in the
+process environment or ignored repository-root `.env`, named
+`POSTHOG_PERSONAL_API_KEY`. It checks that the project's public capture token
+matches the App before making changes. Never add the personal key to App source,
+frontend environment variables, build inputs, documentation, or version control.
+The key is needed only to administer/query Cloud; App capture and saved dashboards
+do not depend on it remaining in this file.
+
+```sh
+node scripts/configure-posthog.mjs --verify
+node scripts/configure-posthog.mjs --apply
+```
+
+Verification executes every query, checks saved definitions and layout, and
+runs query-only fixtures for distinct counts, success denominators, P50, empty
+denominators, strict retention days, immature cohorts, and missing returns.
+Fixtures do not ingest synthetic events. `--apply` idempotently creates or
+updates the tagged dashboard and insights, preserving unrelated dashboards.
+
+At setup, Cloud contained only the excluded `analytics_smoke_test` event and no
+schema 2 production App events. Query and configuration validation passed, but
+real population metrics and retention cannot be validated until users upgrade,
+acknowledge the new collector, and generate enough activity. Source/dev builds
+remain excluded. API verification does not substitute for a signed-in visual
+review of the Cloud dashboard.
 
 ## Delivery and verification
 
-The queue holds at most 128 events in memory, with a five-second HTTP deadline.
-Shutdown cancels delivery and waits at most one second. Delivery is best effort:
-counter markers are saved before sending, and ambiguous/failed responses are
-not retried to avoid duplicating count events. Offline activity is not backfilled.
-Reported statistics therefore represent samples successfully received by Cloud.
-First-active and return events can be lost independently, so cohort ratios are
-sample estimates rather than exact population retention.
-Collection never delays an Agent's model execution on a network request.
+The existing in-memory queue remains bounded to 128 events. Requests have a
+five-second deadline. Opt-out cancels in-flight requests, discards queued data,
+and invalidates existing run handles. Preference persistence failure also fences
+collection in memory. Source/test runtimes remain off Cloud.
 
-The host `analytics.json` format and managed `.denova` data are unchanged by
-this event catalog. No operation history, execution identifiers, offline event
-store, or additional configuration is introduced.
+Events are best effort. Daily markers are persisted before delivery and no
+offline history is stored or backfilled. Shutdown cancels delivery and waits at
+most one second. Network/queue failures can lose starts or ends independently.
+These are successfully received samples, not a complete census. Requests do not
+block user model execution. Capturing uses PostHog's public HTTP protocol rather
+than a second SDK queue, preserving the existing cancellation guarantees.
 
-The fixed `Mozilla/5.0 Denova/1.0` User-Agent was verified with Cloud. Bare
-`Denova/1.0` is filtered as a bot despite HTTP 200. The exporter requires a
-collection receipt with `cache` and `sessionId`; HTTP 200 alone is insufficient.
-Real smoke checks use a synthetic identity and `tag=app-test`, excluded from
-production dashboards. Automated tests use temporary host state and local HTTP
-collectors; E2E source binaries stay off Cloud and the real user's state.
+The response must acknowledge success (`status: "Ok"` or `status: 1`), with no
+quota-limited products. A successful response confirms collector acceptance,
+not that a particular dashboard has already processed and displayed the event.
 
-Umami's free plan currently retains six months and includes 100,000 monthly
-units. Website pageviews, App custom events and custom event properties all
-consume this shared allowance. Period and retention events are not sampled;
-reduce high-frequency execution detail first if the allowance becomes tight.
+A live migration smoke event uses a synthetic `app_test_<UUID>` identity,
+`event=analytics_smoke_test`, and `source=app-test`. Production code cannot
+reclassify developer traffic as production; ordinary tests use local collectors,
+temporary state and isolated services. No management key is required for capture.
+Creating saved cloud dashboards or querying private cloud data requires a
+separate authenticated account/API session.
+
+Official references:
+[Capture protocol](https://posthog.com/docs/api/capture),
+[Retention](https://posthog.com/docs/product-analytics/retention),
+[Aggregations](https://posthog.com/docs/product-analytics/trends/aggregations).
