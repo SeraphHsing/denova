@@ -78,6 +78,9 @@ func newServer(application *app.App, port string, listener net.Listener) *Server
 		`^/api/.*/stream(?:\?.*)?$`,
 		`^/api/(?:chat|interactive/chat|projects/[^/]+/agent-chat/chat|workspace/events)(?:\?.*)?$`,
 	})))
+	// Error envelopes must be correlated before gzip turns the body into a
+	// compressed stream, so this stays inside the gzip middleware.
+	h.Use(errorEnvelopeMiddleware)
 	s.registerRoutes(h)
 	s.engine = h
 	return s
