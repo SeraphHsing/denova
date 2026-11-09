@@ -27,7 +27,7 @@ export function planCI(files, full) {
     go_modules: modules,
     unit: full || workflow || files.some(file => file.startsWith('web/')),
     updater: full || workflow || dependencies || files.some(file => updater.test(file)),
-browser_shards: browserFull ? [1, 2, 3] : [1],
+    browser_shards: browserFull ? [1, 2, 3] : [1],
     shard_count: browserFull ? 3 : 1,
   }
 }

@@ -37,7 +37,7 @@ jobs:
       go_modules: ${{ steps.paths.outputs.go_modules }}
       unit: ${{ steps.paths.outputs.unit }}
       updater: ${{ steps.paths.outputs.updater }}
-browser_full: ${{ steps.paths.outputs.browser_full }}
+      browser_full: ${{ steps.paths.outputs.browser_full }}
       browser_shards: ${{ steps.paths.outputs.browser_shards }}
       shard_count: ${{ steps.paths.outputs.shard_count }}
     steps:
