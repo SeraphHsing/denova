@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -24,6 +23,7 @@ type contentBlock struct {
 	Input     json.RawMessage `json:"input"`
 	ToolUseID string          `json:"tool_use_id"`
 	IsError   bool            `json:"is_error"`
+	Content   json.RawMessage `json:"content"`
 }
 type streamMessage struct {
 	ID      string        `json:"id"`
@@ -56,6 +56,13 @@ type streamEvent struct {
 }
 
 type streamFrame struct {
+	RequestID string          `json:"request_id"`
+	Request   json.RawMessage `json:"request"`
+	Response  struct {
+		RequestID string `json:"request_id"`
+		Subtype   string `json:"subtype"`
+		Error     string `json:"error"`
+	} `json:"response"`
 	SessionID     string          `json:"session_id"`
 	UUID          string          `json:"uuid"`
 	Tools         []string        `json:"tools"`
@@ -63,6 +70,9 @@ type streamFrame struct {
 	Subtype       string          `json:"subtype"`
 	Parent        string          `json:"parent_tool_use_id"`
 	IsMeta        bool            `json:"is_meta"`
+	IsReplay      bool            `json:"isReplay"`
+	InputUUID     string          `json:"user_message_uuid"`
+	InputUUIDs    []string        `json:"user_message_uuids"`
 	ToolUseResult json.RawMessage `json:"tool_use_result"`
 	Message       streamMessage   `json:"message"`
 	// Event is an API stream event only in stream_event frames; other frames
@@ -88,6 +98,7 @@ type streamOutput struct {
 	initialized      bool
 	current          string
 	order            []string
+	replyStart       int
 	text             map[string]string
 	complete         map[string]bool
 	wrapperOffsets   map[string]int
@@ -97,12 +108,22 @@ type streamOutput struct {
 	plan             []agentevent.TodoItem
 	planCalls        map[string]contentBlock
 	planObserved     bool
+	toolIDs          map[string]bool
+	native           *external.NativeObserver
+	ambientMCP       bool
 }
 
 func (s *streamOutput) feed(line []byte, host external.Host) error {
 	var f streamFrame
 	if err := json.Unmarshal(line, &f); err != nil {
 		return fmt.Errorf("decode Claude stream: %w", err)
+	}
+	return s.feedFrame(f, host)
+}
+
+func (s *streamOutput) feedFrame(f streamFrame, host external.Host) error {
+	if err := s.observeNative(f); err != nil {
+		return err
 	}
 	if f.Parent != "" {
 		return nil
@@ -129,6 +150,9 @@ func (s *streamOutput) feed(line []byte, host external.Host) error {
 		case "message_start":
 			s.current = e.Message.ID
 		case "content_block_start":
+			if s.toolIDs != nil && e.Block.Type == "tool_use" {
+				s.toolIDs[e.Block.ID] = true
+			}
 			if e.Block.Type == "text" && e.Block.Text != "" {
 				return s.append(host, fmt.Sprintf("%s:%d", s.current, e.Index), e.Block.Text, false)
 			}
@@ -157,6 +181,9 @@ func (s *streamOutput) feed(line []byte, host external.Host) error {
 		offset := s.wrapperOffsets[f.Message.ID]
 		s.wrapperOffsets[f.Message.ID] += len(f.Message.Content)
 		for i, block := range f.Message.Content {
+			if s.toolIDs != nil && block.Type == "tool_use" {
+				s.toolIDs[block.ID] = true
+			}
 			if block.Type == "tool_use" && slices.Contains([]string{"TaskCreate", "TaskUpdate", "TaskList", "TaskGet"}, block.Name) {
 				if s.planCalls == nil {
 					s.planCalls = map[string]contentBlock{}
@@ -172,14 +199,20 @@ func (s *streamOutput) feed(line []byte, host external.Host) error {
 	case "result":
 		s.terminal = true
 		if u := f.Usage; u != nil {
-			s.usage = &agentschema.TokenUsage{PromptTokens: u.Input + u.CacheRead + u.CacheWrite, CompletionTokens: u.Output, TotalTokens: u.Input + u.CacheRead + u.CacheWrite + u.Output}
-			s.usage.PromptTokenDetails.CachedTokens = u.CacheRead
+			if s.usage == nil {
+				s.usage = &agentschema.TokenUsage{}
+			}
+			prompt := u.Input + u.CacheRead + u.CacheWrite
+			s.usage.PromptTokens += prompt
+			s.usage.CompletionTokens += u.Output
+			s.usage.TotalTokens += prompt + u.Output
+			s.usage.PromptTokenDetails.CachedTokens += u.CacheRead
 		}
 		if f.IsError || f.Subtype != "success" {
 			return fmt.Errorf("Claude attempt failed (%s)", f.Subtype)
 		}
-		if len(s.order) == 0 && f.Result != "" {
-			return s.append(host, "result", f.Result, true)
+		if len(s.order) == s.replyStart && f.Result != "" {
+			return s.append(host, fmt.Sprintf("result-%d", s.replyStart), f.Result, true)
 		}
 	case "system":
 		if f.Subtype == "compact_boundary" {
@@ -194,12 +227,11 @@ func (s *streamOutput) feed(line []byte, host external.Host) error {
 		if f.Subtype == "init" {
 			s.initialized = true
 			// dontAsk plus the explicit --allowedTools grant is the enforcement
-			// boundary: any tool outside it is auto-denied at call time. An extra
-			// CLI-native tool is therefore an observation, not a product failure;
-			// failing here would break every turn when the CLI adds one.
+			// boundary: any tool outside it is rejected. EndConversation and
+			// non-denova ambient MCP tools are exempt.
 			for _, name := range f.Tools {
-				if !s.tools[name] {
-					slog.Warn("Claude exposed a tool outside the product scope", "tool", name)
+				if !s.tools[name] && name != "EndConversation" && !(s.ambientMCP && strings.HasPrefix(name, "mcp__") && !strings.HasPrefix(name, "mcp__denova__")) {
+					return fmt.Errorf("Claude exposed an unscoped tool %q", name)
 				}
 			}
 			for name := range s.tools {

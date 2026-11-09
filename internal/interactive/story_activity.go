@@ -2,11 +2,10 @@ package interactive
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
-
-	"denova/internal/agents/conversationjournal"
 )
 
 // StoryActivity describes retained Game activity, not lifetime generation
@@ -19,25 +18,49 @@ type StoryActivity struct {
 }
 
 // ReadActivity reads one stable story revision without changing its selection.
-// It walks the union of branch ancestry once and streams journal envelopes,
-// avoiding per-branch narrative replay and retaining no historical prose.
+// It snapshots indexed metadata under the Story lease, then walks the union of
+// branch ancestry outside the lease without reading historical prose.
 func (s *Store) ReadActivity(ctx context.Context, storyID string, from, until time.Time) (StoryActivity, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	release, err := s.acquireStoryReadLeaseLocked(storyID)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return StoryActivity{}, err
 	}
-	defer release()
-	handle, err := s.refreshStoryJournalLocked(storyID, false)
-	if err != nil {
+	var result StoryActivity
+	var branches []BranchMeta
+	var heads []string
+	var nodes map[string]storyModelNode
+	if err := func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		release, err := s.acquireStoryReadLeaseLocked(storyID)
+		if err != nil {
+			return err
+		}
+		defer release()
+		handle, err := s.refreshStoryJournalLocked(storyID, false)
+		if err != nil {
+			return err
+		}
+		result.Story = storySummaryFromProjection(handle.projection)
+		if result.Story.Preview {
+			return nil
+		}
+		for _, branch := range handle.projection.Meta.Branches {
+			branches = append(branches, branch)
+		}
+		for _, branch := range handle.projection.Branches {
+			heads = append(heads, branch.Head)
+		}
+		// Traversal reads only scalar node fields. Copy the map so a concurrent
+		// commit through this Store cannot change the captured ancestry.
+		nodes = maps.Clone(handle.projection.ModelNodes)
+		return nil
+	}(); err != nil {
 		return StoryActivity{}, err
 	}
-	result := StoryActivity{Story: storySummaryFromProjection(handle.projection)}
 	if result.Story.Preview {
 		return result, nil
 	}
-	for _, branch := range handle.projection.Meta.Branches {
+	for _, branch := range branches {
 		if branch.From == "" {
 			continue // The initial branch is not a newly explored alternative.
 		}
@@ -50,24 +73,29 @@ func (s *Store) ReadActivity(ctx context.Context, storyID string, from, until ti
 		}
 	}
 	visited := make(map[string]uint8)
-	turns := make(map[string]bool)
-	for _, branch := range handle.projection.Branches {
+	for _, head := range heads {
 		var path []string
-		for id := branch.Head; id != ""; {
+		for id := head; id != ""; {
 			if err := ctx.Err(); err != nil {
 				return StoryActivity{}, err
 			}
 			if visited[id] == 2 {
 				break
 			}
-			node, found := handle.projection.ModelNodes[id]
+			node, found := nodes[id]
 			if !found || visited[id] == 1 {
 				return StoryActivity{}, fmt.Errorf("Game activity ancestry is incomplete at %s", id)
 			}
 			visited[id] = 1
 			path = append(path, id)
 			if node.Count > 0 {
-				turns[id] = true
+				at, err := time.Parse(time.RFC3339Nano, node.TurnAt)
+				if err != nil {
+					return StoryActivity{}, fmt.Errorf("invalid turn activity timestamp: %w", err)
+				}
+				if !at.Before(from) && at.Before(until) {
+					result.TurnTimes = append(result.TurnTimes, at)
+				}
 			}
 			id = node.Parent
 		}
@@ -75,32 +103,6 @@ func (s *Store) ReadActivity(ctx context.Context, storyID string, from, until ti
 			visited[id] = 2
 		}
 	}
-	if len(turns) == 0 {
-		return result, nil
-	}
-	err = handle.journal.VisitRange(ctx, conversationjournal.Range{Through: handle.journal.Head().Cursor}, func(record conversationjournal.Record) error {
-		var event StoryEventEnvelope
-		if err := json.Unmarshal(record.Payload, &event); err != nil {
-			return err
-		}
-		if event.Type != StoryEventTypeTurn || !turns[event.ID] {
-			return nil
-		}
-		delete(turns, event.ID)
-		at, err := time.Parse(time.RFC3339Nano, event.Ts)
-		if err != nil {
-			return fmt.Errorf("invalid turn activity timestamp: %w", err)
-		}
-		if !at.Before(from) && at.Before(until) {
-			result.TurnTimes = append(result.TurnTimes, at)
-		}
-		return nil
-	})
-	if err != nil {
-		return StoryActivity{}, err
-	}
-	if len(turns) != 0 {
-		return StoryActivity{}, fmt.Errorf("Game activity is missing %d retained turns", len(turns))
-	}
+	slices.SortFunc(result.TurnTimes, time.Time.Compare)
 	return result, nil
 }

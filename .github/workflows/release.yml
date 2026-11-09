@@ -73,24 +73,83 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.target }}
-          path: dist/github-release/denova-${{ env.RELEASE_TAG }}-${{ matrix.target }}.*
+          path: dist/github-release/denova-webui-${{ env.RELEASE_TAG }}-*
           compression-level: 0
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         if: matrix.target == 'linux-x64'
         with:
           name: release-metadata
-          path: |
-            dist/github-release/RELEASE_NOTES.md
-            dist/github-release/install.sh
+          path: dist/github-release/RELEASE_NOTES.md
+
+  desktop:
+    name: Package Desktop (${{ matrix.os }})
+    needs: ci
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+      MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      MYGO_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      DENOVA_DESKTOP_UPDATE_PUBLIC_KEY: ${{ vars.DENOVA_DESKTOP_UPDATE_PUBLIC_KEY }}
+      MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+      DENOVA_DESKTOP_RELEASE: 'true'
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.ci.outputs.sha }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            agent/go.sum
+      - uses: ./.github/actions/setup-web
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-distribution
+          run-id: ${{ needs.ci.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - run: mkdir -p output && tar -xf ci-distribution.tar -C output
+      - name: Prepare optional platform signing and build the tested application
+        env:
+          DENOVA_RELEASE_FRONTEND_DIR: ${{ github.workspace }}/output/web
+          DENOVA_VERSION: ${{ env.RELEASE_TAG }}
+        run: |
+          node desktop/scripts/signing.mjs
+          pnpm --dir desktop build:backend
+      - name: Package the application with signed updates
+        run: pnpm --dir desktop package
+      - name: Exercise the production application
+        run: node desktop/test/package.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-desktop-${{ matrix.os }}
+          path: output/release-desktop/*
+          if-no-files-found: error
+          compression-level: 0
 
   publish:
     name: Publish verified release assets
-    needs: [ci, package]
+    needs: [ci, package, desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.ci.outputs.sha }}
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -101,26 +160,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64 windows-x64; do
-            extension=tar.gz
-            if [[ "$target" == windows-x64 ]]; then extension=zip; fi
-            test -s "denova-$RELEASE_TAG-$target.$extension"
-          done
-          sha256sum denova-* > checksums.txt
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            # Published assets are immutable: replacing them races clients that
-            # already pinned this release's checksums.
-            if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" != true ]]; then
-              echo "Refusing to replace published assets; publish a new version instead." >&2
-              exit 1
-            fi
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file RELEASE_NOTES.md
-            gh release upload "$RELEASE_TAG" denova-* checksums.txt install.sh --clobber
-          else
-            gh release create "$RELEASE_TAG" --draft denova-* checksums.txt install.sh --title "$RELEASE_TAG" --notes-file RELEASE_NOTES.md
-          fi
-          # Latest only points to this version once every archive and checksum
-          # has finished uploading. Interrupted uploads leave a private draft.
-          gh release edit "$RELEASE_TAG" --draft=false
+          RELEASE_SOURCE_SHA: ${{ needs.ci.outputs.sha }}
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/publish-release.sh" "$RELEASE_TAG" "$RELEASE_SOURCE_SHA"

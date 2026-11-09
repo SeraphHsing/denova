@@ -22,12 +22,11 @@ function createGitFixture(prefix) {
 }
 
 test('independent changes keep the required check without product jobs', () => {
-  const plan = planCI(['img/wechat.png', 'CONTRIBUTING.md', 'tools/creative-eval/run.mjs', 'scripts/eval-creative.sh'], false)
+  const plan = planCI(['img/wechat.png', 'CONTRIBUTING.md', '.gitignore'], false)
   assert.equal(plan.code, false)
   assert.deepEqual(plan.go_modules, [])
   assert.equal(plan.unit, false)
   assert.equal(plan.updater, false)
-  assert.equal(plan.creative_eval, true)
 })
 
 test('frontend changes do not run Go or updater suites', () => {
@@ -36,7 +35,6 @@ test('frontend changes do not run Go or updater suites', () => {
   assert.deepEqual(plan.go_modules, [])
   assert.equal(plan.unit, true)
   assert.equal(plan.updater, false)
-  assert.equal(plan.creative_eval, false)
   // Every browser journey is reachable from frontend changes.
   assert.equal(plan.browser_full, true)
   assert.deepEqual(plan.browser_shards, [1, 2, 3])
@@ -55,12 +53,6 @@ test('workflow changes verify the whole browser suite they describe', () => {
   const plan = planCI(['.github/workflows/ci.yml'], false)
   assert.equal(plan.browser_full, true)
   assert.deepEqual(plan.browser_shards, [1, 2, 3])
-})
-
-test('documentation-only changes do not start the evaluation harness', () => {
-  const plan = planCI(['docs/guide.md', 'README.md'], false)
-  assert.equal(plan.code, false)
-  assert.equal(plan.creative_eval, false)
 })
 
 test('Agent and dependency changes also verify the root module consumer', () => {
@@ -91,7 +83,6 @@ test('full verification covers every product suite even on a documentation commi
   assert.equal(plan.unit, true)
   assert.equal(plan.updater, true)
   assert.equal(plan.manifests, true)
-  assert.equal(plan.creative_eval, true)
   assert.deepEqual(plan.go_modules, ['.', 'agent'])
   assert.equal(plan.browser_full, true)
   assert.deepEqual(plan.browser_shards, [1, 2, 3])

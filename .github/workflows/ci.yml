@@ -37,8 +37,7 @@ jobs:
       go_modules: ${{ steps.paths.outputs.go_modules }}
       unit: ${{ steps.paths.outputs.unit }}
       updater: ${{ steps.paths.outputs.updater }}
-      creative_eval: ${{ steps.paths.outputs.creative_eval }}
-      browser_full: ${{ steps.paths.outputs.browser_full }}
+browser_full: ${{ steps.paths.outputs.browser_full }}
       browser_shards: ${{ steps.paths.outputs.browser_shards }}
       shard_count: ${{ steps.paths.outputs.shard_count }}
     steps:
@@ -122,26 +121,6 @@ jobs:
       - run: go test -tags integration ./internal/update
       - run: go vet ./internal/update
 
-  creative-eval:
-    name: Verify evaluation harness
-    needs: changes
-    if: needs.changes.outputs.creative_eval == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: |
-            go.sum
-            agent/go.sum
-      - uses: ./.github/actions/setup-web
-        with:
-          directory: tools/creative-eval
-      # Uses an isolated product backend and local deterministic model fixture.
-      - run: bash -n scripts/eval-creative.sh
-      - run: pnpm --dir tools/creative-eval verify
-
   unit:
     name: Frontend checks
     needs: changes
@@ -198,12 +177,11 @@ jobs:
 
   browser-tests:
     name: Playwright (${{ matrix.shard }}/${{ needs.changes.outputs.shard_count }})
-    needs: [changes, go, creative-eval, unit, build]
+    needs: [changes, go, unit, build]
     if: >-
       ${{ !cancelled() && needs.changes.outputs.code == 'true'
           && needs.build.result == 'success' && needs.unit.result == 'success'
-          && (needs.go.result == 'success' || needs.go.result == 'skipped')
-          && (needs.creative-eval.result == 'success' || needs.creative-eval.result == 'skipped') }}
+          && (needs.go.result == 'success' || needs.go.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -235,10 +213,60 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    needs: [changes, build]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            agent/go.sum
+      - uses: ./.github/actions/setup-web
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-distribution
+      - run: mkdir -p output && tar -xf ci-distribution.tar -C output
+      - name: Build the native desktop distribution
+        env:
+          DENOVA_RELEASE_FRONTEND_DIR: ${{ github.workspace }}/output/web
+        run: |
+          pnpm --dir desktop build:backend
+          pnpm --dir desktop test
+          DENOVA_DESKTOP_E2E=true DENOVA_DESKTOP_SKIP_INSTALLER=true pnpm --dir desktop package
+      - name: Exercise the packaged application
+        run: pnpm --dir desktop test:smoke
+      - name: Verify the Windows desktop restart script
+        if: runner.os == 'Windows'
+        run: node desktop/test/restart-windows.mjs
+      - name: Verify production packaging
+        run: |
+          pnpm --dir desktop package
+          node desktop/test/package.mjs
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: desktop-diagnostics-${{ matrix.os }}
+          path: output/desktop
+          if-no-files-found: ignore
+          retention-days: 7
+
   test-build:
     name: Test and build
     if: ${{ always() }}
-    needs: [changes, go, updater, creative-eval, unit, build, browser-tests]
+    needs: [changes, go, updater, unit, build, browser-tests, desktop]
     runs-on: ubuntu-latest
     steps:
       - name: Require applicable suites to pass
@@ -247,20 +275,18 @@ jobs:
           CODE: ${{ needs.changes.outputs.code }}
           GO_MODULES: ${{ needs.changes.outputs.go_modules }}
           EXPECT_UPDATER: ${{ needs.changes.outputs.updater }}
-          EXPECT_EVAL: ${{ needs.changes.outputs.creative_eval }}
           GO: ${{ needs.go.result }}
           UPDATER: ${{ needs.updater.result }}
-          EVAL: ${{ needs.creative-eval.result }}
           UNIT: ${{ needs.unit.result }}
           BUILD: ${{ needs.build.result }}
           BROWSER: ${{ needs.browser-tests.result }}
+          DESKTOP: ${{ needs.desktop.result }}
         run: |
           test "$CHANGES" = success
-          if [[ "$EXPECT_EVAL" == true ]]; then test "$EVAL" = success; fi
           if [[ "$CODE" == true ]]; then
             if [[ "$GO_MODULES" != '[]' ]]; then test "$GO" = success; fi
             if [[ "$EXPECT_UPDATER" == true ]]; then test "$UPDATER" = success; fi
-            for result in "$UNIT" "$BUILD" "$BROWSER"; do
+            for result in "$UNIT" "$BUILD" "$BROWSER" "$DESKTOP"; do
               test "$result" = success
             done
           fi

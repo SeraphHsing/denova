@@ -86,7 +86,7 @@ func (turn *ExternalTurn) prepareInput(ctx context.Context, mode external.Operat
 	// assembled per turn — state, lore, history — stays in the user text so the
 	// system prefix remains stable for provider cache matching.
 	var standing, turnContext strings.Builder
-	standingRules := external.StandingInstructionsSupported(turn.config.Config.ActiveAgentRuntime.Kind)
+	standingRules := turn.config.Config.ActiveAgentRuntime != nil && external.StandingInstructionsSupported(turn.config.Config.ActiveAgentRuntime.Kind)
 	for _, fragment := range fragments {
 		switch fragment.Placement {
 		case agentschema.ContextLeadingMessage, agentschema.ContextStateMessage:
@@ -108,6 +108,8 @@ func (turn *ExternalTurn) prepareInput(ctx context.Context, mode external.Operat
 		Selection:    *turn.config.Config.ActiveAgentRuntime,
 		Instructions: turn.config.Assembly.Composition.Instruction() + standing.String(),
 		Plan:         turn.config.Plan,
+		Workspace:    c.workspace, StoreRoot: turn.config.Config.ProjectStoreDir, DataRoot: turn.config.Config.DataDir(),
+		AgentKind: config.AgentKindInteractiveStory, Locale: turn.config.Config.Language,
 	}
 	for i := len(prepared.ModelContext.Messages) - 1; i >= 0; i-- {
 		if message := prepared.ModelContext.Messages[i]; message != nil && message.Role == agentschema.User {

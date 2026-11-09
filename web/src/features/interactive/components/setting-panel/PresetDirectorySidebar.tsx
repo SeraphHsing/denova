@@ -2,7 +2,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronsDownUp, ChevronsUpDown, FileText, Plus, Search } from 'lucide-react'
+import { ChevronDown, ChevronsDownUp, ChevronsUpDown, FilePlus2, FileText, FileUp, Plus, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ResourceDirectoryItem, ResourceDirectorySection } from '@/components/resource-directory/types'
 import { Badge } from '@/components/ui/badge'
@@ -23,6 +23,7 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
 } from '@/components/ui/sidebar'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { verticalAxisModifiers } from '@/lib/dnd'
 import { cn } from '@/lib/utils'
@@ -33,6 +34,7 @@ interface PresetDirectorySidebarProps {
   activeId: string | null
   activeSectionId: PresetResourceKind
   saving?: boolean
+  onImportNarrativeStyle?: () => void
   onSelect: (id: string) => void
   onReorderItems: (sectionId: string, orderedItemIds: string[]) => void
 }
@@ -58,6 +60,7 @@ export function PresetDirectorySidebar({
   activeSectionId,
   saving = false,
   onSelect,
+  onImportNarrativeStyle,
   onReorderItems,
 }: PresetDirectorySidebarProps) {
   const { t } = useTranslation()
@@ -225,17 +228,36 @@ export function PresetDirectorySidebar({
                           </span>
                         </CollapsibleTrigger>
                       </SidebarGroupLabel>
-                      {section.onCreate && (
-                        <SidebarGroupAction
-                          type="button"
-                          disabled={saving}
-                          onClick={section.onCreate}
-                          aria-label={section.createLabel ?? `${t('common.create')} ${section.label}`}
-                          className="top-2.5"
-                        >
+                      {section.onCreate && (section.id === 'teller' && onImportNarrativeStyle ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <SidebarGroupAction
+                              disabled={saving}
+                              aria-label={t('narrativeStyle.directory.add')}
+                              className="top-2.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                            >
+                              <Plus aria-hidden="true" />
+                            </SidebarGroupAction>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-max min-w-48 max-w-(--radix-dropdown-menu-content-available-width)">
+                            <DropdownMenuGroup>
+                              <DropdownMenuItem onSelect={section.onCreate}>
+                                <FilePlus2 aria-hidden="true" />
+                                {section.createLabel}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={onImportNarrativeStyle}>
+                                <FileUp aria-hidden="true" />
+                                {t('narrativeStyle.import.title')}
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <SidebarGroupAction type="button" disabled={saving} onClick={section.onCreate}
+                          aria-label={section.createLabel ?? `${t('common.create')} ${section.label}`} className="top-2.5">
                           <Plus aria-hidden="true" />
                         </SidebarGroupAction>
-                      )}
+                      ))}
                       <CollapsibleContent>
                         <SidebarGroupContent className="pl-2">
                           <SidebarMenu>

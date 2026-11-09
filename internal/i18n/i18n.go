@@ -77,6 +77,14 @@ func stringify(v any) string {
 }
 
 var catalogZH = map[string]string{
+	"api.bookStructure.backup":       "调整章节结构前的备份",
+	"api.bookStructure.invalid":      "请选择章、卷—章或卷—章—节结构。",
+	"api.bookStructure.conflict":     "作品已发生变化，请重新预览章节结构。",
+	"api.bookStructure.unsupported":  "目录中存在额外文件或超过三层的结构，请先整理这些内容再转换。",
+	"api.bookStructure.failed":       "无法完成章节结构操作，请重试。",
+	"api.bookStructure.firstVolume":  "第一卷",
+	"api.bookStructure.firstSection": "第一节",
+
 	"decision.classification.reason": "决策模型根据名称和资料内容匹配已有分类。",
 	"decision.trigger.title":         "语义条件已满足",
 	"decision.trigger.matched":       "当前证据满足已配置的语义条件。",
@@ -149,10 +157,13 @@ var catalogZH = map[string]string{
 	"agentRuntime.notReady":                  "Agent 引擎尚未就绪，请在 Agents 设置中检查连接和登录状态。",
 	"agentRuntime.notInstalled":              "未找到 Codex 可执行程序，请安装后重新检查。",
 	"agentRuntime.incompatibleVersion":       "Codex CLI 版本过旧或无法识别，最低支持版本为 0.130.0。请在运行 Denova 的电脑上执行 codex update（npm 安装可执行 npm install -g @openai/codex@latest），更新后点击「检查连接」。",
-	"agentRuntime.claudeIncompatibleVersion": "Claude Code 版本过旧或无法识别，最低支持版本为 2.1.259。请在运行 Denova 的电脑上执行 claude update（Homebrew 安装使用 brew upgrade claude-code），更新后点击「检查连接」。",
+	"agentRuntime.claudeIncompatibleVersion": "Claude Code 版本过旧或无法识别，最低支持版本为 2.1.314。请在运行 Denova 的电脑上执行 claude update（Homebrew 安装使用 brew upgrade claude-code），更新后点击「检查连接」。",
 	"agentRuntime.operationFailed":           "Agent 引擎执行失败，已确认的内容和工具结果已保留。",
 	"agentRuntime.contentPolicyRejected":     "上游模型的内容安全策略拒绝了本次请求。请调整相关描述后重试。",
 	"agentRuntime.turnIncomplete":            "回合长时间没有取得进展，已保留正文并结束本次执行。可继续本回合补齐状态与选项。",
+	"agentRuntime.nativeApproval":            "原生工具请求执行以下操作，是否允许？",
+	"agentRuntime.allowOnce":                 "允许本次操作",
+	"agentRuntime.deny":                      "拒绝",
 	"agentRuntime.toolPermissionDenied":      "当前执行权限阻止了工具 {{tool}}。可在停止运行后通过会话权限菜单调整。",
 	"agentRuntime.interrupted":               "Agent 操作已中断，请处理待答问题或待核验结果后继续。",
 
@@ -254,6 +265,7 @@ var catalogZH = map[string]string{
 	"api.interactive.storyModeOnly":                  "当前仅支持 story 子模式",
 	"api.interactive.storyStructureBusy":             "故事正在生成，请在本轮结束后再修改主角或状态结构",
 	"api.interactive.invalidSpeechContentMode":       "朗读内容选项无效，请选择完整正文或仅对话。",
+	"api.interactive.invalidNarrativeStyleOverrides": "叙事规则保存失败：所选风格已变化，或调整内容超过 512 KiB。请刷新风格或减少内容后重试。",
 	"api.interactive.tellerInstructionEmpty":         "叙事风格编辑指令不能为空",
 	"api.lore.instructionEmpty":                      "资料库编辑指令不能为空",
 	"api.settings.fileSaveFailed":                    "以下配置文件保存失败：{{paths}}。其余成功项已保存，请重新加载后处理失败项。",
@@ -345,6 +357,14 @@ var catalogZH = map[string]string{
 }
 
 var catalogEN = map[string]string{
+	"api.bookStructure.backup":       "Before chapter structure change",
+	"api.bookStructure.invalid":      "Choose chapters, volumes and chapters, or volumes, chapters and sections.",
+	"api.bookStructure.conflict":     "The manuscript changed. Preview the structure again.",
+	"api.bookStructure.unsupported":  "The manuscript contains extra files or more than three levels. Organize these before converting.",
+	"api.bookStructure.failed":       "Could not complete the chapter structure operation. Please try again.",
+	"api.bookStructure.firstVolume":  "Volume 1",
+	"api.bookStructure.firstSection": "Section 1",
+
 	"decision.classification.reason": "Decision model matched an existing category using the name and content.",
 	"decision.trigger.title":         "Semantic condition satisfied",
 	"decision.trigger.matched":       "Current evidence satisfies the configured semantic condition.",
@@ -417,10 +437,13 @@ var catalogEN = map[string]string{
 	"agentRuntime.notReady":                  "The Agent runtime is not ready. Check its connection and sign-in status in Agents settings.",
 	"agentRuntime.notInstalled":              "The Codex executable was not found. Install it and check again.",
 	"agentRuntime.incompatibleVersion":       "The Codex CLI version is too old or unrecognized. Minimum supported version: 0.130.0. Run codex update on the computer running Denova (for npm installations, use npm install -g @openai/codex@latest), then click Check connection.",
-	"agentRuntime.claudeIncompatibleVersion": "The Claude Code version is too old or unrecognized. Minimum supported version: 2.1.259. Run claude update on the computer running Denova (for Homebrew installations, use brew upgrade claude-code), then click Check connection.",
+	"agentRuntime.claudeIncompatibleVersion": "The Claude Code version is too old or unrecognized. Minimum supported version: 2.1.314. Run claude update on the computer running Denova (for Homebrew installations, use brew upgrade claude-code), then click Check connection.",
 	"agentRuntime.operationFailed":           "The Agent runtime failed. Confirmed content and tool results have been preserved.",
 	"agentRuntime.contentPolicyRejected":     "The upstream model rejected this request under its content safety policy. Revise the relevant wording and try again.",
 	"agentRuntime.turnIncomplete":            "The turn stopped making progress. The narrative has been preserved and this run ended; continue the turn to complete its state and choices.",
+	"agentRuntime.nativeApproval":            "Allow the native tool to perform the following action?",
+	"agentRuntime.allowOnce":                 "Allow once",
+	"agentRuntime.deny":                      "Deny",
 	"agentRuntime.toolPermissionDenied":      "Tool {{tool}} was blocked by the current execution permissions. Stop the run to adjust permissions in the conversation menu.",
 	"agentRuntime.interrupted":               "The Agent operation was interrupted. Resolve pending questions or unverified results before continuing.",
 
@@ -522,6 +545,7 @@ var catalogEN = map[string]string{
 	"api.interactive.storyModeOnly":                  "Only the story submode is supported now.",
 	"api.interactive.storyStructureBusy":             "The story is generating. Change the protagonist or state structure after this turn finishes.",
 	"api.interactive.invalidSpeechContentMode":       "Choose full prose or quoted text for speech playback.",
+	"api.interactive.invalidNarrativeStyleOverrides": "Narrative rules could not be saved: the selected style changed or adjustments exceed 512 KiB. Refresh the style or reduce the content and retry.",
 	"api.interactive.tellerInstructionEmpty":         "Narrative direction edit instruction is required.",
 	"api.lore.instructionEmpty":                      "Lore edit instruction is required.",
 	"api.settings.fileSaveFailed":                    "These settings files could not be saved: {{paths}}. Successful changes were saved. Reload before retrying the failed files.",

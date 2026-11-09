@@ -117,49 +117,63 @@ EOF
   release_tag="v$(release_version_without_prefix)"
   {
     echo "# Denova ${release_tag}"
-    echo
-    echo "## Release highlights / 发布内容"
-    echo
-    extract_release_brief "${release_tag}" < CHANGELOG.md
     cat <<'EOF'
 
-## Verification / 验证
+## Desktop / 桌面版（推荐）
 
-- The release workflow requires successful CI for the exact tagged commit, including both Go modules, frontend unit tests, translations, and browser journeys against the built distribution.
-- Packaging reuses the frontend from that CI run; platform archives are compiled in parallel without repeating the test suites.
-- Packaging: five platform archives are generated from the same source revision and listed in `checksums.txt`.
+| System / 系统 | Download / 下载 |
+| --- | --- |
+| macOS Apple Silicon | [Download DMG / 下载 DMG](https://github.com/alfredxw/denova/releases/download/@TAG@/denova-desktop-@TAG@-macos-arm64.dmg) |
+| Windows x64 | [Download installer / 下载安装器](https://github.com/alfredxw/denova/releases/download/@TAG@/denova-desktop-@TAG@-windows-x64-setup.exe) |
 
-发布流程要求标签对应提交的 CI 成功，覆盖两个 Go module、前端单测、双语键检查、生产构建及构建产物上的浏览器流程；复用该次 CI 的前端产物，并行生成五个平台压缩包及 `checksums.txt`。
+macOS 13 or later (Apple Silicon): open the DMG and drag Denova into Applications. Windows x64: run the EXE installer.
 
-## Install / 安装
+macOS 13 及以上（Apple Silicon）打开 DMG，将 Denova 拖入 Applications；Windows x64 运行 EXE 安装器。
 
-macOS / Linux one-command install / 一键安装：
+Desktop v0.7.0 and v0.7.1: install this version manually once to switch to the separate automatic-update feed. Keep your existing data folder. WebUI v0.7.1 can still update automatically.
+
+v0.7.0、v0.7.1 桌面版需手动安装本版一次，以切换自动更新通道；继续使用原数据目录。v0.7.1 WebUI 可继续自动升级。
+
+If Desktop cannot start, install this version manually and select your existing data folder.
+
+如果旧版桌面程序无法启动，直接安装本版并选择原数据目录即可。
+
+This Beta has no platform code signing or macOS notarization. Your system may require permission on first launch. Desktop updates verify package signatures.
+
+当前 Beta 未做平台代码签名或 macOS 公证，首次打开可能需要在系统安全设置中允许运行；桌面更新仍校验更新包签名。
+
+<details>
+<summary>WebUI · Browser interface / 浏览器版</summary>
+
+Run the downloaded program on your computer or server, then open its address in a browser. WebUI is a downloadable application, not a hosted website.
+
+在本机或服务器运行下载的程序，再通过浏览器访问。WebUI 需要下载运行，不是在线托管网站。
+
+| System / 系统 | Download / 下载 |
+| --- | --- |
+| macOS Apple Silicon | [tar.gz](https://github.com/alfredxw/denova/releases/download/@TAG@/denova-webui-@TAG@-macos-arm64.tar.gz) |
+| macOS Intel | [tar.gz](https://github.com/alfredxw/denova/releases/download/@TAG@/denova-webui-@TAG@-macos-x64.tar.gz) |
+| Windows x64 | [zip](https://github.com/alfredxw/denova/releases/download/@TAG@/denova-webui-@TAG@-windows-x64.zip) |
+| Linux x64 | [tar.gz](https://github.com/alfredxw/denova/releases/download/@TAG@/denova-webui-@TAG@-linux-x64.tar.gz) |
+| Linux ARM64 | [tar.gz](https://github.com/alfredxw/denova/releases/download/@TAG@/denova-webui-@TAG@-linux-arm64.tar.gz) |
+
+macOS / Linux:
 
 ```bash
-curl -fsSL https://github.com/alfredxw/denova/releases/latest/download/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/alfredxw/denova/@TAG@/scripts/install.sh | sh
 ```
 
-Or download the archive for your platform, verify it against `checksums.txt`, extract it, and run Denova from the extracted `denova` directory.
+Or verify the archive against `checksums.txt`, extract it, and run `denova` (`denova.exe` on Windows).
 
-也可以下载对应平台压缩包，使用 `checksums.txt` 校验后解压，并在解压后的 `denova` 目录运行：
+也可以使用 `checksums.txt` 校验压缩包，解压后运行 `denova`（Windows 为 `denova.exe`）。
 
-```bash
-./denova
-```
+</details>
 
-Windows:
+## Changes / 变化
 
-```powershell
-denova.exe
-```
-
-Checksum example / 校验示例：
-
-```bash
-shasum -a 256 -c checksums.txt
-```
 EOF
-  } > "${DIST_DIR}/RELEASE_NOTES.md"
+    extract_release_brief "${release_tag}" < CHANGELOG.md
+  } | sed "s/@TAG@/${release_tag}/g" > "${DIST_DIR}/RELEASE_NOTES.md"
 }
 
 require_command go
@@ -196,8 +210,6 @@ if [[ ! -s "${FRONTEND_DIR}/index.html" ]]; then
   exit 1
 fi
 mkdir -p "${DIST_DIR}" "${BUILD_DIR}"
-cp "${ROOT_DIR}/scripts/install.sh" "${DIST_DIR}/install.sh"
-chmod 0755 "${DIST_DIR}/install.sh"
 # Release builds serve only the frontend embedded in this exact binary.
 # Only generated directories below this checkout are replaced.
 rm -rf "${ROOT_DIR}/internal/webfs/dist"
@@ -206,7 +218,8 @@ cp -R "${FRONTEND_DIR}" "${ROOT_DIR}/internal/webfs/dist"
 echo "==> Compiling and packaging"
 for target in "${TARGETS[@]}"; do
   IFS=":" read -r key goos goarch exe updater_exe archive_type <<<"${target}"
-  package_name="denova-${VERSION}-${key}"
+  asset_platform="${key/darwin-/macos-}"
+  package_name="denova-webui-${VERSION}-${asset_platform}"
   package_dir="${BUILD_DIR}/${package_name}/denova"
   rm -rf "${BUILD_DIR}/${package_name}"
   mkdir -p "${package_dir}"
@@ -262,7 +275,8 @@ done
 
 echo "==> Writing checksums.txt"
 : > "${DIST_DIR}/checksums.txt"
-for file in "${DIST_DIR}"/denova-"${VERSION}"-*; do
+for file in "${DIST_DIR}"/denova-webui-"${VERSION}"-*; do
+  [[ -f "${file}" ]] || continue
   checksum_file "${file}" >> "${DIST_DIR}/checksums.txt"
 done
 
