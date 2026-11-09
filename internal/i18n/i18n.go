@@ -151,6 +151,8 @@ var catalogZH = map[string]string{
 	"agentRuntime.incompatibleVersion":       "Codex CLI 版本过旧或无法识别，最低支持版本为 0.130.0。请在运行 Denova 的电脑上执行 codex update（npm 安装可执行 npm install -g @openai/codex@latest），更新后点击「检查连接」。",
 	"agentRuntime.claudeIncompatibleVersion": "Claude Code 版本过旧或无法识别，最低支持版本为 2.1.259。请在运行 Denova 的电脑上执行 claude update（Homebrew 安装使用 brew upgrade claude-code），更新后点击「检查连接」。",
 	"agentRuntime.operationFailed":           "Agent 引擎执行失败，已确认的内容和工具结果已保留。",
+	"agentRuntime.contentPolicyRejected":     "上游模型的内容安全策略拒绝了本次请求。请调整相关描述后重试。",
+	"agentRuntime.turnIncomplete":            "回合长时间没有取得进展，已保留正文并结束本次执行。可继续本回合补齐状态与选项。",
 	"agentRuntime.toolPermissionDenied":      "当前执行权限阻止了工具 {{tool}}。可在停止运行后通过会话权限菜单调整。",
 	"agentRuntime.interrupted":               "Agent 操作已中断，请处理待答问题或待核验结果后继续。",
 
@@ -417,6 +419,8 @@ var catalogEN = map[string]string{
 	"agentRuntime.incompatibleVersion":       "The Codex CLI version is too old or unrecognized. Minimum supported version: 0.130.0. Run codex update on the computer running Denova (for npm installations, use npm install -g @openai/codex@latest), then click Check connection.",
 	"agentRuntime.claudeIncompatibleVersion": "The Claude Code version is too old or unrecognized. Minimum supported version: 2.1.259. Run claude update on the computer running Denova (for Homebrew installations, use brew upgrade claude-code), then click Check connection.",
 	"agentRuntime.operationFailed":           "The Agent runtime failed. Confirmed content and tool results have been preserved.",
+	"agentRuntime.contentPolicyRejected":     "The upstream model rejected this request under its content safety policy. Revise the relevant wording and try again.",
+	"agentRuntime.turnIncomplete":            "The turn stopped making progress. The narrative has been preserved and this run ended; continue the turn to complete its state and choices.",
 	"agentRuntime.toolPermissionDenied":      "Tool {{tool}} was blocked by the current execution permissions. Stop the run to adjust permissions in the conversation menu.",
 	"agentRuntime.interrupted":               "The Agent operation was interrupted. Resolve pending questions or unverified results before continuing.",
 

@@ -72,6 +72,8 @@ const agentRuntime = {
   'agentRuntime.busy': "会话正在运行或有待处理的提问、工具结果。",
   'agentRuntime.capabilityUnsupported': "此运行时不支持该操作。",
   'agentRuntime.operationFailed': "执行失败，已确认的内容和变更已保留。",
+  'agentRuntime.contentPolicyRejected': "上游模型的内容安全策略拒绝了本次请求。请调整相关描述后重试。",
+  'agentRuntime.turnIncomplete': "回合长时间没有取得进展，已保留正文并结束本次执行。可继续本回合补齐状态与选项。",
   'agentRuntime.interrupted': "执行已中断。处理待答问题后可发送新消息继续。",
   'agentRuntime.configuration.otherRuntime': "该配置只对原引擎生效。",
   'agentRuntime.configuration.savedOtherRuntimes': "已保存的其他引擎配置",
