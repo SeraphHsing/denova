@@ -103,6 +103,28 @@ func TestRunNativeNDJSONMCPAndResume(t *testing.T) {
 	}
 }
 
+// A terminal result is authoritative for the product task. CLI 1.4.7 was
+// observed emitting it and then staying alive with stdout still open, which left
+// the turn "thinking" forever: no output, no error, and only a manual cancel.
+func TestRunSettlesTerminalResultWhenCLIStaysAlive(t *testing.T) {
+	restore := exitGrace
+	exitGrace = 200 * time.Millisecond
+	t.Cleanup(func() { exitGrace = restore })
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	started := time.Now()
+	result, err := fixtureClient(t, "hang").Run(ctx, fixtureInput(t), &testHost{})
+	if err != nil || !result.Settled || result.Text != "Task completed." || result.SessionID != "conversation-1" {
+		t.Fatalf("hung attempt result: %#v %v", result, err)
+	}
+	if result.Usage == nil || result.Usage.TotalTokens != 30 {
+		t.Fatalf("hung attempt usage: %#v", result.Usage)
+	}
+	if elapsed := time.Since(started); elapsed >= exitGrace*10 {
+		t.Fatalf("hung attempt waited %s, want a bounded reap", elapsed)
+	}
+}
+
 func TestRunCancellationPreservesPartialResponse(t *testing.T) {
 	client := fixtureClient(t, "cancel")
 	ctx, cancel := context.WithCancel(t.Context())
@@ -147,6 +169,58 @@ func TestRunRejectsIncompleteAndFailedTurns(t *testing.T) {
 				t.Fatalf("failed result: %#v %v", result, err)
 			}
 		})
+	}
+}
+
+// A disposable attempt must not leave its conversation store behind: the CLI
+// prunes neither summaries nor unbound attempts, so every maintenance call would
+// otherwise add another store.
+func TestRunRemovesDisposableConversation(t *testing.T) {
+	client := fixtureClient(t, "tool")
+	store := filepath.Join(os.Getenv("HOME"), ".gemini", "antigravity-cli", "conversations")
+	if err := os.MkdirAll(store, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	leftover := filepath.Join(store, "conversation-1.db")
+	if err := os.WriteFile(leftover, []byte("store"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := fixtureInput(t)
+	input.Directory = ""
+	if _, err := client.Run(t.Context(), input, &testHost{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(leftover); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("disposable conversation survived: %v", err)
+	}
+}
+
+// A resume that opens another conversation was not continued. Nothing has run at
+// the initialization frame, so the attempt is rebuilt from canonical history
+// instead of silently appending to a fresh conversation.
+func TestRunRejectsResumeUnderAnotherConversation(t *testing.T) {
+	input := fixtureInput(t)
+	input.SessionID = "conversation-1"
+	if _, err := fixtureClient(t, "resume-mismatch").Run(t.Context(), input, &testHost{}); !errors.Is(err, external.ErrSessionUnavailable) {
+		t.Fatalf("resume mismatch was accepted: %v", err)
+	}
+}
+
+// A provider verdict is the product-visible failure. The teardown this adapter
+// triggers right after reading it is an expected side effect; appending its own
+// exit status is what turned a policy rejection into "signal: killed".
+func TestRunProviderVerdictExcludesProcessTeardown(t *testing.T) {
+	result, err := fixtureClient(t, "error").Run(t.Context(), fixtureInput(t), &testHost{})
+	if err == nil || !strings.Contains(err.Error(), "fixture failure") {
+		t.Fatalf("provider verdict missing: %#v %v", result, err)
+	}
+	for _, noise := range []string{"exit status", "signal: killed"} {
+		if strings.Contains(err.Error(), noise) {
+			t.Fatalf("process teardown leaked into the product error: %v", err)
+		}
+	}
+	if result.Text != "Task " {
+		t.Fatalf("streamed text was dropped: %#v", result)
 	}
 }
 
@@ -279,6 +353,11 @@ func TestAntigravityFixtureProcess(t *testing.T) {
 		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":[]}}`)
 	} else if len(agent.Tools) != 0 || len(agent.MCPServers) != 1 {
 		panic("unexpected product tool configuration")
+	} else if mode == "resume-mismatch" {
+		if !slices.Contains(args, "--conversation") {
+			panic("resume mismatch fixture needs a resumed attempt")
+		}
+		fmt.Println(`{"event":"init","conversation_id":"conversation-other","init":{"tools":["call_mcp_tool"]}}`)
 	} else if mode == "unsafe" {
 		fmt.Println(`{"event":"init","conversation_id":"conversation-1","init":{"tools":["call_mcp_tool","run_command"]}}`)
 	} else if mode == "approval" {
@@ -328,6 +407,11 @@ func TestAntigravityFixtureProcess(t *testing.T) {
 		total = 60
 	}
 	fmt.Printf("{\"event\":\"result\",\"result\":{\"conversation_id\":\"conversation-1\",\"status\":\"SUCCESS\",\"response\":\"Task completed.\",\"usage\":{\"input_tokens\":%d,\"output_tokens\":%d,\"total_tokens\":%d}}}\n", total*2/3, total/3, total)
+	if mode == "hang" {
+		// Settled turn whose process never exits, like CLI 1.4.7 keeping its
+		// quota refreshers alive and stdout open after the terminal result.
+		time.Sleep(10 * time.Minute)
+	}
 	os.Exit(0)
 }
 

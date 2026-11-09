@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"denova/config"
 	"denova/internal/agents/runtime/external"
@@ -19,6 +20,13 @@ import (
 	agentschema "github.com/alfredxw/denova/agent/schema"
 	"gopkg.in/yaml.v3"
 )
+
+// exitGrace bounds how long a finished turn waits for the CLI to exit by itself
+// before the process is terminated. The terminal result frame is authoritative:
+// CLI 1.4.7 can emit it and then keep running its quota and catalog refreshers
+// while still holding stdout open, which used to freeze the product task with no
+// output, no error and no way to recover except cancelling the turn.
+var exitGrace = 5 * time.Second
 
 func (c *Client) Run(ctx context.Context, input external.Input, host external.Host) (result external.Result, runErr error) {
 	if input.Selection.Kind != config.RuntimeAntigravity || input.Selection.Antigravity == nil || host == nil {
@@ -33,12 +41,20 @@ func (c *Client) Run(ctx context.Context, input external.Input, host external.Ho
 	default:
 		return result, fmt.Errorf("unknown Antigravity operation %q", input.Mode)
 	}
+	// Turns carry the empty mode; name it for logs and diagnostics.
+	operation := string(input.Mode)
+	if operation == "" {
+		operation = "turn"
+	}
 	if err := checkAmbientHooks(); err != nil {
 		return result, err
 	}
+	// A resumed conversation that comes back under another identity is the only
+	// reliable signal that the CLI rebuilt instead of continuing; log both sides.
 	defer func() {
 		if runErr != nil {
-			slog.WarnContext(ctx, "[external-runtime] Antigravity attempt failed", "error", runErr)
+			slog.WarnContext(ctx, "[external-runtime] Antigravity attempt failed", "error", runErr,
+				"operation", operation, "resume_session", input.SessionID, "session_id", result.SessionID, "history", len(input.History))
 		}
 	}()
 	runCtx, cancel := context.WithCancel(ctx)
@@ -77,7 +93,15 @@ func (c *Client) Run(ctx context.Context, input external.Input, host external.Ho
 			}()
 		}
 	}
+	// Verified on CLI 1.4.7/1.4.8: neither the random agent directory nor a
+	// per-attempt scratch cwd affects "--conversation" resumption — only the
+	// resolved conversation identity and the product binding do. Scratch cwds stay
+	// per attempt on purpose: they also stage "@ref" image copies, so a shared cwd
+	// would let concurrent turns overwrite each other's references.
 	dir := input.Directory
+	// A disposable attempt (summary or unbound conversation) leaves no reusable
+	// provider session behind, so its CLI conversation store is removed on exit.
+	disposable := dir == ""
 	if dir == "" {
 		temporary, err := os.MkdirTemp("", "denova-antigravity-")
 		if err != nil {
@@ -162,8 +186,12 @@ func (c *Client) Run(ctx context.Context, input external.Input, host external.Ho
 		if !waited {
 			_ = cmd.Wait()
 		}
+		if disposable && input.SessionID == "" {
+			releaseTransientConversation(result.SessionID)
+		}
 	}()
-	slog.InfoContext(ctx, "[external-runtime] Antigravity attempt started", "version", c.version, "model", settings.Model)
+	slog.InfoContext(ctx, "[external-runtime] Antigravity attempt started", "version", c.version, "model", settings.Model,
+		"operation", operation, "agent", agentName, "resume_session", input.SessionID, "history", len(input.History))
 	output := streamOutput{allowed: map[string]bool{}}
 	if len(input.Tools) > 0 {
 		output.allowed["call_mcp_tool"] = true
@@ -182,27 +210,103 @@ func (c *Client) Run(ctx context.Context, input external.Input, host external.Ho
 		}
 		if !initialized && output.initialized {
 			close(bridge.ready)
+			// Resume was requested but the CLI opened another conversation. Nothing
+			// has executed yet at the initialization frame, so this is the one safe
+			// point to declare the provider session lost and let the runtime rebuild
+			// from canonical history instead of appending to a silent fresh one.
+			if input.SessionID != "" && output.result.SessionID != input.SessionID {
+				err = errors.Join(err, fmt.Errorf("%w: Antigravity resumed %s but started %s",
+					external.ErrSessionUnavailable, input.SessionID, output.result.SessionID))
+				cancel()
+				break
+			}
+		}
+		// The terminal frame ends the attempt. Reading until EOF would hand the
+		// CLI the power to hang the product task by not closing stdout, and the
+		// protocol forbids meaningful frames afterwards anyway.
+		if output.terminal {
+			break
 		}
 	}
 	if scanner.Err() != nil {
 		err = errors.Join(err, scanner.Err())
 		cancel()
 	}
-	waitErr := cmd.Wait()
+	exited := make(chan error, 1)
 	waited = true
+	go func() { exited <- cmd.Wait() }()
+	waitErr, forced := reap(exited, cancel)
 	result = output.complete(input.CumulativeUsage)
 	result.Settled = output.terminal && err == nil && scanner.Err() == nil
 	if ctx.Err() != nil {
 		return result, ctx.Err()
 	}
-	if err != nil || waitErr != nil {
-		return result, classifyAttemptError(errors.Join(err, waitErr))
+	// The provider verdict is the attempt failure. This adapter terminates the CLI
+	// as soon as it reads a failed verdict, so the following teardown is an
+	// expected side effect: joining it would only append "signal: killed" to a
+	// product error the user has to read. Keep the process outcome observable in
+	// logs instead.
+	if err != nil {
+		if waitErr != nil {
+			slog.InfoContext(ctx, "[external-runtime] Antigravity process teardown after a failed attempt",
+				"process_error", waitErr, "forced", forced, "operation", operation)
+		}
+		return result, classifyAttemptError(err)
+	}
+	// A settled turn that needed its process reaped is the expected cost of not
+	// trusting process lifetime. Without a terminal result the exit status is the
+	// only failure evidence, so it stays the error.
+	if waitErr != nil && !result.Settled {
+		return result, classifyAttemptError(waitErr)
 	}
 	if !output.initialized || !output.terminal {
 		return result, errors.New("Antigravity exited without initialization and a terminal result")
 	}
-	slog.InfoContext(ctx, "[external-runtime] Antigravity attempt completed")
+	slog.InfoContext(ctx, "[external-runtime] Antigravity attempt completed", "forced_exit", forced, "exit_error", waitErr,
+		"operation", operation, "session_id", result.SessionID,
+		"resumed", input.SessionID != "" && input.SessionID == result.SessionID)
 	return result, nil
+}
+
+// releaseTransientConversation removes the CLI-owned conversation a disposable
+// attempt created. The CLI prunes neither summaries nor unbound attempts, so one
+// SQLite store per maintenance call would accumulate without bound.
+func releaseTransientConversation(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	store := filepath.Join(home, ".gemini", "antigravity-cli", "conversations")
+	for _, suffix := range []string{".db", ".db-wal", ".db-shm"} {
+		path := filepath.Join(store, sessionID+suffix)
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("[external-runtime] could not remove a transient Antigravity conversation", "path", path, "error", err)
+		}
+	}
+}
+
+// reap waits for the CLI to exit and terminates it when it does not. Tool effects
+// already settled through the host before the terminal frame, so stopping the
+// process here cannot drop product work.
+func reap(exited <-chan error, cancel context.CancelFunc) (err error, forced bool) {
+	select {
+	case err = <-exited:
+		return err, false
+	case <-time.After(exitGrace):
+	}
+	cancel()
+	select {
+	case err = <-exited:
+	case <-time.After(exitGrace):
+		// The wait goroutine reaps the process once the kill lands; returning now
+		// keeps the product task from waiting on an unresponsive CLI.
+		slog.Warn("[external-runtime] Antigravity process ignored termination")
+		err = errors.New("Antigravity process ignored termination after the terminal result")
+	}
+	return err, true
 }
 
 // inheritCustomizations is the ambient-isolation switch: set to false it stops
