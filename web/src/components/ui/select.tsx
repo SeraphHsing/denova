@@ -83,11 +83,12 @@ function SelectContent({
         <SelectScrollUpButton />
         {/* Only the width matches the trigger. Pinning the height to the trigger
             height clipped every option into a one-row strip, so the content
-            swallowed clicks aimed at the selected row. */}
+            swallowed clicks aimed at the selected row. The minimum keeps one
+            full row reachable when the available height is tight. */}
         <SelectPrimitive.Viewport
           data-position={position}
           className={cn(
-            "data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)",
+            "min-h-8 data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)",
             position === "popper" && ""
           )}
         >
@@ -133,7 +134,7 @@ function SelectScrollUpButton({
     <SelectPrimitive.ScrollUpButton
       data-slot="select-scroll-up-button"
       className={cn(
-        "pointer-events-none z-10 flex cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
+        "pointer-events-none absolute inset-x-0 top-0 z-10 flex cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -153,7 +154,7 @@ function SelectScrollDownButton({
     <SelectPrimitive.ScrollDownButton
       data-slot="select-scroll-down-button"
       className={cn(
-        "pointer-events-none z-10 flex cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
+        "pointer-events-none absolute inset-x-0 bottom-0 z-10 flex cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
