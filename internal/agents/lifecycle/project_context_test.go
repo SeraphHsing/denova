@@ -169,4 +169,3 @@ func TestStandingProjectInstructions(t *testing.T) {
 		t.Fatal("non-root project file must not be standing")
 	}
 }
-

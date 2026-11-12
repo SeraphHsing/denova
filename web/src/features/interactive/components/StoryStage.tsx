@@ -758,7 +758,6 @@ export function StoryStage({ active = true, projectId, workspace, styleSceneSugg
                   return result
                 }}
                 isStreaming={streaming}
-                followStreaming={false}
                 activityContent={stageRun.runtime.recoveryPaused ? t('storyStage.activity.recoveryPaused') : activityContent}
                 highlightDialogue
                 contentClassName="nova-story-reading-column"

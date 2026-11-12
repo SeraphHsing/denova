@@ -403,4 +403,3 @@ func TypeLabel(t string) string {
 		return "其他"
 	}
 }
-
