@@ -81,10 +81,13 @@ function SelectContent({
         {...props}
       >
         <SelectScrollUpButton />
+        {/* Only the width matches the trigger. Pinning the height to the trigger
+            height clipped every option into a one-row strip, so the content
+            swallowed clicks aimed at the selected row. */}
         <SelectPrimitive.Viewport
           data-position={position}
           className={cn(
-            "data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)",
+            "data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)",
             position === "popper" && ""
           )}
         >
