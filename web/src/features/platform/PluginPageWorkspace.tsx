@@ -11,7 +11,7 @@ import { CollapsiblePanelSeparator, CollapsibleResizablePanel, PanelMotionGroup 
 import { resolvePanelInitialSize, usePersistedPanelLayout } from '@/components/layout/use-persisted-panel-layout'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { InlineErrorNotice } from '@/components/common/inline-error-notice'
-import { useRemoteAccessLocal } from '@/features/remote-access/api'
+import { useLocalAccess } from '@/features/remote-access/api'
 import { isPluginPageRoute, type PluginPageRoute, type WorkspaceMode } from '@/stores/workspace-store'
 import { GamePlayer, type GamePlayerHandle } from './GamePlayer'
 import { PluginPageAgent, type PluginPageLoreReferences } from './PluginPageAgent'
@@ -81,7 +81,7 @@ function ProjectPluginPage({ page, projectId, visible, loreReferenceLabels, lore
   const { t, i18n } = useTranslation()
   const { resolvedTheme } = useTheme()
   // Plugin pages run in a loopback runtime; a LAN browser cannot host the frame.
-  const hostLocal = useRemoteAccessLocal()
+  const hostLocal = useLocalAccess()
   const plugins = useQuery({
     queryKey: ['platform', 'project-plugins', projectId, 'general', i18n.language],
     queryFn: () =>

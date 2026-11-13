@@ -105,7 +105,7 @@ func platformManagementHostOnly(path, method string) bool {
 
 func abortWithLocalizedError(c *app.RequestContext, status int, key string) {
 	message := i18n.FromHeader(localeHeader(c)).T(key)
-	c.AbortWithStatusJSON(status, map[string]string{"error": message})
+	c.AbortWithStatusJSON(status, map[string]string{"error": message, "code": key})
 }
 
 func localeHeader(c *app.RequestContext) string {

@@ -1,4 +1,5 @@
 import { randomUUID } from '@/lib/uuid'
+import { useLocalAccess } from '@/features/remote-access/api'
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from 'next-themes'
@@ -6,7 +7,6 @@ import { Minimize2, PanelsTopLeft, Puzzle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
-import { useRemoteAccessLocal } from '@/features/remote-access/api'
 import { GamePlayer } from './GamePlayer'
 import { localized, management, platformError, releasePluginConsumer, type ContributionContext, type PluginAction, type ProjectPlugin, type RuntimeSnapshot, type LocalizedText } from './api'
 
@@ -30,8 +30,6 @@ const PluginWorkspaceContext = createContext<((target: PluginLauncherTarget) => 
 export function PluginWorkspaceProvider({ children }: { children: ReactNode }) {
   const { t, i18n } = useTranslation()
   const { resolvedTheme } = useTheme()
-  // Panels and commands need a loopback runtime that a LAN browser cannot reach.
-  const hostLocal = useRemoteAccessLocal()
   const [launcher, setLauncher] = useState<PluginLauncherTarget | null>(null)
   const [command, setCommand] = useState<PluginActionSelection | null>(null)
   const [panels, setPanels] = useState<OpenPanel[]>([])
@@ -55,7 +53,6 @@ export function PluginWorkspaceProvider({ children }: { children: ReactNode }) {
   }, [])
   const openLauncher = useCallback((target: PluginLauncherTarget) => setLauncher(target), [])
   const openAction = async (selection: PluginActionSelection) => {
-    if (!hostLocal) { toast.error(t('platform.errors.LOCAL_HOST_ONLY')); return }
     if (selection.action.target.kind === 'tool') { setCommand(selection); setLauncher(null); return }
     const key = `${selection.projectId}/${selection.plugin.id}/${selection.action.target.id}`
     if (panelsRef.current.some(panel => panel.key === key)) { setActive(key); setVisible(true); setLauncher(null); return }
@@ -108,11 +105,15 @@ export function PluginWorkspaceProvider({ children }: { children: ReactNode }) {
 export function PluginActionsButton({ projectId, context, pluginId, label }: PluginLauncherTarget & { label?: string }) {
   const open = useContext(PluginWorkspaceContext)
   const { t } = useTranslation()
+  const local = useLocalAccess()
+  if (!local) return null
   return <Button variant="ghost" size="sm" onClick={() => open?.({ projectId, context, pluginId })}><Puzzle />{label ?? t('platform.plugins.actions')}</Button>
 }
 
 export function PluginActionsMenuItem({ projectId, context }: PluginLauncherTarget) {
   const open = useContext(PluginWorkspaceContext)
   const { t } = useTranslation()
+  const local = useLocalAccess()
+  if (!local) return null
   return <DropdownMenuItem onSelect={() => open?.({ projectId, context })}><Puzzle />{t('platform.plugins.actions')}</DropdownMenuItem>
 }

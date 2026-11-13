@@ -36,18 +36,14 @@ export const remoteAccessQuery = queryOptions({
   },
 })
 
-/**
- * Whether this browser runs on the Denova host. Extension runtimes listen on
- * loopback, so a LAN browser can read state but cannot open them. Unknown
- * status counts as local to keep the first paint from disabling controls.
- */
-export function remoteAccessIsLocal(): boolean {
-  return queryClient.getQueryData<RemoteAccessStatus>(remoteAccessQuery.queryKey)?.local !== false
+/** Reuse the access check completed by RemoteAccessGate before mounting the workbench. */
+export function useLocalAccess() {
+  return useQuery(remoteAccessQuery).data?.local === true
 }
 
-export function useRemoteAccessLocal(): boolean {
-  const { data } = useQuery(remoteAccessQuery)
-  return data?.local !== false
+/** Synchronous form for request guards outside React render scope. */
+export function remoteAccessIsLocal(): boolean {
+  return queryClient.getQueryData<RemoteAccessStatus>(remoteAccessQuery.queryKey)?.local === true
 }
 
 export function loginRemoteAccess(username: string, password: string): Promise<RemoteAccessStatus> {

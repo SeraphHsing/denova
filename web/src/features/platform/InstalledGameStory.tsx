@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { InlineErrorNotice } from '@/components/common/inline-error-notice'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { StoryPicker, type StoryPickerProps } from '@/features/interactive/components/StoryPicker'
-import { useRemoteAccessLocal } from '@/features/remote-access/api'
+import { useLocalAccess } from '@/features/remote-access/api'
 import { GamePlayer } from './GamePlayer'
 import { management, managementBase, localized, platformError, type CatalogEntry, type Instance, type RuntimeSnapshot } from './api'
 
@@ -24,7 +24,7 @@ export function InstalledGameStory({ instance, item, active, picker, onRefresh }
   const queryClient = useQueryClient()
   // Game runtimes listen on loopback, so a LAN browser cannot open or upgrade
   // them; say so instead of requesting a runtime that can never load.
-  const hostLocal = useRemoteAccessLocal()
+  const hostLocal = useLocalAccess()
   const [runtime, setRuntime] = useState<RuntimeSnapshot | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
