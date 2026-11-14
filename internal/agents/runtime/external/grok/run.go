@@ -128,11 +128,11 @@ func renderPrompt(input external.Input) (string, []agentschema.Attachment, error
 }
 
 type headlessTurn struct {
-	host       external.Host
-	session    string
-	text       strings.Builder
-	plan       *agentevent.TodoState
-	usage      *agentschema.TokenUsage
+	host        external.Host
+	session     string
+	text        strings.Builder
+	plan        *agentevent.TodoState
+	usage       *agentschema.TokenUsage
 	stopReason  string
 	ended       bool
 	warnedTools bool

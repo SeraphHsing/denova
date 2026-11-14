@@ -189,8 +189,8 @@ func TestStartApplyProcessRejectsUnavailableOutputLog(t *testing.T) {
 	if err := writeManifest(path, ApplyManifest{
 		ID: "blocked-log", State: PhaseWaiting, Version: "0.2.0",
 		InstallDir: install, SourceDir: source,
-		BackupDir: filepath.Join(filepath.Dir(source), "backup"),
-		TargetExecutable: filepath.Join(install, "nova"),
+		BackupDir:         filepath.Join(filepath.Dir(source), "backup"),
+		TargetExecutable:  filepath.Join(install, "nova"),
 		UpdaterExecutable: filepath.Join(source, updaterExecutableName()),
 	}); err != nil {
 		t.Fatal(err)

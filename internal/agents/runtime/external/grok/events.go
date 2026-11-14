@@ -29,11 +29,11 @@ type headlessPlanEntry struct {
 }
 
 type headlessUsage struct {
-	Input        int `json:"input_tokens"`
-	Output       int `json:"output_tokens"`
-	CacheRead    int `json:"cache_read_input_tokens"`
-	Reasoning    int `json:"reasoning_tokens"`
-	Total        int `json:"total_tokens"`
+	Input     int `json:"input_tokens"`
+	Output    int `json:"output_tokens"`
+	CacheRead int `json:"cache_read_input_tokens"`
+	Reasoning int `json:"reasoning_tokens"`
+	Total     int `json:"total_tokens"`
 }
 
 func (usage headlessUsage) tokens() *agentschema.TokenUsage {

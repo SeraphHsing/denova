@@ -36,9 +36,9 @@ type ExternalRun struct {
 	once          sync.Once
 	outcome       agentrun.Outcome
 	goal          agentgoal.GoalState
-	goalEvaluated bool                 // false when committed work still needs evaluation after recovery
-	guidance      int                  // number of instructions supplied to the current provider attempt
-	steering      chan struct{}        // wakeups only; accepted inputs live in the journal
+	goalEvaluated bool          // false when committed work still needs evaluation after recovery
+	guidance      int           // number of instructions supplied to the current provider attempt
+	steering      chan struct{} // wakeups only; accepted inputs live in the journal
 	replayed      bool
 	recoveryKey   string
 	attempted     string // input identity for retry accounting

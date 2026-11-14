@@ -228,7 +228,7 @@ type Plan struct {
 	// import must not replace: the local entry was edited or deleted since the
 	// reviewed preview (ImportChanged), or a same-name entry appeared that the
 	// user never reviewed (ImportUnreviewed). Both keep local content untouched.
-	ImportChanged   []string `json:"import_changed,omitempty"`
+	ImportChanged    []string `json:"import_changed,omitempty"`
 	ImportUnreviewed []string `json:"import_unreviewed,omitempty"`
 
 	// Unavailable selections keep the review visible but prevent application

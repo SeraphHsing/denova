@@ -11,16 +11,16 @@ import (
 )
 
 type interactiveAgentCommandRequest struct {
-	Type              string                   `json:"type"`
-	CommandID         string                   `json:"command_id"`
-	TargetOperationID string                   `json:"target_operation_id"`
-	TargetCommandID   string                   `json:"target_command_id,omitempty"`
-	StoryID           string                   `json:"story_id"`
-	BranchID          string                   `json:"branch_id,omitempty"`
-	Branch            string                   `json:"branch,omitempty"`
-	Input             novaApp.AgentChatRequest `json:"input"`
-	Reason            string                   `json:"reason,omitempty"`
-	ResumeInterruptionID string                 `json:"resume_interruption_id,omitempty"`
+	Type                 string                   `json:"type"`
+	CommandID            string                   `json:"command_id"`
+	TargetOperationID    string                   `json:"target_operation_id"`
+	TargetCommandID      string                   `json:"target_command_id,omitempty"`
+	StoryID              string                   `json:"story_id"`
+	BranchID             string                   `json:"branch_id,omitempty"`
+	Branch               string                   `json:"branch,omitempty"`
+	Input                novaApp.AgentChatRequest `json:"input"`
+	Reason               string                   `json:"reason,omitempty"`
+	ResumeInterruptionID string                   `json:"resume_interruption_id,omitempty"`
 }
 
 // HandleInteractiveChatCommand controls the exact active game operation.

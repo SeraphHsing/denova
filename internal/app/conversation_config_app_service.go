@@ -49,13 +49,13 @@ type ConversationConfigBinding struct {
 // transport layer depends on this type instead of reaching through app into
 // the Agent implementation package.
 type ConversationConfigPatch struct {
-	CustomAgentID *string                       `json:"custom_agent_id,omitempty"`
-	ProfileID     *string                       `json:"profile_id,omitempty"`
-	ThinkingLevel *string                       `json:"thinking_level,omitempty"`
-	ApprovalMode  *config.AgentApprovalMode     `json:"approval_mode,omitempty"`
-	Runtime       *config.RuntimeSelection      `json:"runtime,omitempty"`
-	Codex         *config.CodexRuntimeSettings  `json:"codex,omitempty"`
-	Claude        *config.ClaudeRuntimeSettings `json:"claude,omitempty"`
+	CustomAgentID *string                            `json:"custom_agent_id,omitempty"`
+	ProfileID     *string                            `json:"profile_id,omitempty"`
+	ThinkingLevel *string                            `json:"thinking_level,omitempty"`
+	ApprovalMode  *config.AgentApprovalMode          `json:"approval_mode,omitempty"`
+	Runtime       *config.RuntimeSelection           `json:"runtime,omitempty"`
+	Codex         *config.CodexRuntimeSettings       `json:"codex,omitempty"`
+	Claude        *config.ClaudeRuntimeSettings      `json:"claude,omitempty"`
 	Grok          *config.GrokRuntimeSettings        `json:"grok,omitempty"`
 	Antigravity   *config.AntigravityRuntimeSettings `json:"antigravity,omitempty"`
 }

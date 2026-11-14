@@ -306,7 +306,6 @@ func observePlanFixture(t *testing.T, state ProductState, items []agentevent.Tod
 	return state.ObservePlan(t.Context(), external.PlanEvent(items))
 }
 
-
 func TestSuspendedExternalControlDetachesOnlyExactQuiescentCycle(t *testing.T) {
 	_, _, state, options, _ := controlFixture(t)
 	engines := NewEngines()

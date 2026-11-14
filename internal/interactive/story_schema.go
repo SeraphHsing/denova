@@ -229,8 +229,12 @@ func mapToStoryEventRecord(raw map[string]any) (StoryEventRecord, error) {
 	}
 	if envelope.Type == StoryEventTypeTurnAbandoned {
 		var abandoned TurnAbandonedEvent
-		if err := mapToStruct(raw, &abandoned); err != nil { return StoryEventRecord{}, err }
-		if err := validateTurnAbandonedEvent(abandoned); err != nil { return StoryEventRecord{}, err }
+		if err := mapToStruct(raw, &abandoned); err != nil {
+			return StoryEventRecord{}, err
+		}
+		if err := validateTurnAbandonedEvent(abandoned); err != nil {
+			return StoryEventRecord{}, err
+		}
 	}
 	if envelope.Type == StoryEventTypeBranchPlanUpdated || envelope.Type == StoryEventTypeBranchPlanRevised {
 		var event BranchPlanUpdatedEvent

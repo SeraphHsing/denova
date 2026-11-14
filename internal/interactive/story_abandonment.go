@@ -92,9 +92,9 @@ func (s *Store) AbandonPendingTurn(storyID, branchID, playerInputID string) erro
 		V: schemaVersion, Type: StoryEventTypeTurnAbandoned,
 		ID: deterministicTurnAbandonmentID(playerInputID), ParentID: branch.Head,
 		BranchID: branchID, Ts: now, PlayerInputID: playerInputID,
-		AgentCommandID: accepted.AgentCommandID,
+		AgentCommandID:   accepted.AgentCommandID,
 		AgentOperationID: accepted.AgentOperationID,
-		AgentCycle: accepted.AgentCycle, Reason: "user_requested",
+		AgentCycle:       accepted.AgentCycle, Reason: "user_requested",
 	}
 	if err := validateTurnAbandonedEvent(event); err != nil {
 		return err

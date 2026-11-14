@@ -58,10 +58,10 @@ func TestCharacterCardOverrideByDetail(t *testing.T) {
 	incoming := portableCollection[json.RawMessage]{
 		Version: 1,
 		Items: []json.RawMessage{jsonBytes(t, map[string]any{
-			"id":         "hero",
-			"name":       "Hero",
-			"type":       "character",
-			"content":    "A much longer and more detailed description of the hero.",
+			"id":            "hero",
+			"name":          "Hero",
+			"type":          "character",
+			"content":       "A much longer and more detailed description of the hero.",
 			"detail_fields": 5,
 		})},
 	}
@@ -106,10 +106,10 @@ func TestCharacterCardKeepLessDetailed(t *testing.T) {
 	incoming := portableCollection[json.RawMessage]{
 		Version: 1,
 		Items: []json.RawMessage{jsonBytes(t, map[string]any{
-			"id":         "hero",
-			"name":       "Hero",
-			"type":       "character",
-			"content":    "Short",
+			"id":            "hero",
+			"name":          "Hero",
+			"type":          "character",
+			"content":       "Short",
 			"detail_fields": 1,
 		})},
 	}
@@ -153,10 +153,10 @@ func TestCharacterCardWithoutOverrideKeepsNameConflict(t *testing.T) {
 	incoming := portableCollection[json.RawMessage]{
 		Version: 1,
 		Items: []json.RawMessage{jsonBytes(t, map[string]any{
-			"id":         "hero",
-			"name":       "Hero",
-			"type":       "character",
-			"content":    "A much longer and more detailed description of the hero.",
+			"id":            "hero",
+			"name":          "Hero",
+			"type":          "character",
+			"content":       "A much longer and more detailed description of the hero.",
 			"detail_fields": 5,
 		})},
 	}
@@ -591,10 +591,10 @@ func planOverrideFixtureWithConfirm(t *testing.T, s *Service, projectID string, 
 		t.Fatal(err)
 	}
 	return s.Plan(ctx, PlanRequest{
-		PreviewID:       preview.ID,
-		CandidateID:     preview.Candidates[0].ID,
-		Resources:       []string{"lore"},
-		ProjectID:       projectID,
+		PreviewID:        preview.ID,
+		CandidateID:      preview.Candidates[0].ID,
+		Resources:        []string{"lore"},
+		ProjectID:        projectID,
 		OverrideByDetail: true,
 		OverrideChoices:  choices,
 		ConfirmReview:    &ConfirmReview{Duplicates: duplicates, Choices: choices},

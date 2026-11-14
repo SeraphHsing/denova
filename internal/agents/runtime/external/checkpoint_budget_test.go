@@ -58,7 +58,7 @@ func TestPayloadBudgetTrimsHistoryForMedia(t *testing.T) {
 	textCap := payload - mediaSpace
 	calls := 0
 	prepared, err := (HistoryPreparation{
-		Input:   nearBudgetImageInput(t),
+		Input: nearBudgetImageInput(t),
 		Adapter: budgetedAdapter{adapterFunc: func(_ context.Context, input Input, _ Host) (Result, error) {
 			calls++
 			if input.Mode != OperationSummarize {
@@ -89,7 +89,7 @@ func TestPayloadBudgetLeavesTextOnlyReconstructionUntouched(t *testing.T) {
 	input.History = input.History[:3] // drop the image-bearing record
 	calls := 0
 	prepared, err := (HistoryPreparation{
-		Input:   input,
+		Input: input,
 		Adapter: budgetedAdapter{adapterFunc: func(_ context.Context, input Input, _ Host) (Result, error) {
 			calls++
 			return Result{Text: "unexpected summary"}, nil
@@ -109,7 +109,7 @@ func TestPayloadBudgetAbsentKeepsProviderBudgetBehavior(t *testing.T) {
 	input := nearBudgetImageInput(t)
 	calls := 0
 	prepared, err := (HistoryPreparation{
-		Input:   input,
+		Input: input,
 		Adapter: adapterFunc(func(_ context.Context, input Input, _ Host) (Result, error) {
 			calls++
 			return Result{Text: "unexpected summary"}, nil
@@ -136,7 +136,7 @@ func TestPayloadBudgetSparesSmallImageReconstruction(t *testing.T) {
 	}
 	calls := 0
 	prepared, err := (HistoryPreparation{
-		Input:   input,
+		Input: input,
 		Adapter: budgetedAdapter{adapterFunc: func(_ context.Context, input Input, _ Host) (Result, error) {
 			calls++
 			return Result{Text: "unexpected summary"}, nil

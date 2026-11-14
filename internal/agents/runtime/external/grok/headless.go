@@ -191,7 +191,7 @@ func (c *Client) startHeadless(ctx context.Context, input external.Input, host e
 	if err := os.WriteFile(filepath.Join(attempt.home, "config.toml"), body, 0o600); err != nil {
 		return nil, err
 	}
-// Both channels write the prompt to a file; the process arguments only ever
+	// Both channels write the prompt to a file; the process arguments only ever
 	// carry short flags and paths. An image-bearing turn writes ACP content
 	// blocks as a .json file, which the CLI parses as blocks; a text-only turn
 	// uses a plain .txt file. Historical images follow the text records and

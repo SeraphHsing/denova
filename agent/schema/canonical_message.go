@@ -10,16 +10,16 @@ package schema
 // intentionally NOT listed here: it is the one opaque protocol entry that
 // carries replay semantics and must remain part of the canonical fingerprint.
 var providerTelemetryExtraKeys = map[string]struct{}{
-	"provider":            {},
-	"protocol":            {},
-	"response_id":         {},
-	"model":               {},
-	"created":             {},
-	"response_status":     {},
-	"openai-request-id":   {},
-	"google-request-id":   {},
-	"service_tier":        {},
-	"system_fingerprint":  {},
+	"provider":           {},
+	"protocol":           {},
+	"response_id":        {},
+	"model":              {},
+	"created":            {},
+	"response_status":    {},
+	"openai-request-id":  {},
+	"google-request-id":  {},
+	"service_tier":       {},
+	"system_fingerprint": {},
 }
 
 // CanonicalMessage returns a copy of message with provider telemetry stripped

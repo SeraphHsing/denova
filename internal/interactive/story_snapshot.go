@@ -196,7 +196,9 @@ func pendingPlayerInputsForBranch(lines []StoryEventRecord, branchID string, act
 	for _, record := range lines {
 		if record.Envelope.Type == StoryEventTypeTurnAbandoned && record.Envelope.BranchID == branchID {
 			var event TurnAbandonedEvent
-			if err := mapToStruct(record.Raw, &event); err != nil { return nil, err }
+			if err := mapToStruct(record.Raw, &event); err != nil {
+				return nil, err
+			}
 			consumed[event.PlayerInputID] = true
 			continue
 		}

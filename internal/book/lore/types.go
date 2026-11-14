@@ -48,11 +48,11 @@ type Item struct {
 	// DetailFields records the number of non-empty detail fields carried by the
 	// importing source (e.g. a tavern character card). It is optional and only
 	// used by detail-aware duplicate resolution; zero means unknown.
-	DetailFields     int               `json:"detail_fields,omitempty"`
-	CreatedAt        string            `json:"created_at"`
-	UpdatedAt        string            `json:"updated_at"`
-	Image            *Image            `json:"image,omitempty"`
-	Materials        *Materials        `json:"materials,omitempty"`
+	DetailFields int        `json:"detail_fields,omitempty"`
+	CreatedAt    string     `json:"created_at"`
+	UpdatedAt    string     `json:"updated_at"`
+	Image        *Image     `json:"image,omitempty"`
+	Materials    *Materials `json:"materials,omitempty"`
 	// ResolvedMaterials is a read projection, never persisted by Store.
 	ResolvedMaterials []Material  `json:"resolved_materials,omitempty"`
 	Provenance        *Provenance `json:"provenance,omitempty"`
